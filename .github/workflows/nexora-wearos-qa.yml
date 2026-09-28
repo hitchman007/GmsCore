@@ -17,6 +17,5 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - uses: android-actions/setup-android@v3
       - name: Compile WearOS modules
         run: ./gradlew :play-services-wearable:compileDebugJavaWithJavac :play-services-wearable:core:compileDebugJavaWithJavac --stacktrace --no-daemon
