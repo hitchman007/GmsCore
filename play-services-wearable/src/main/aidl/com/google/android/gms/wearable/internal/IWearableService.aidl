@@ -2,6 +2,7 @@ package com.google.android.gms.wearable.internal;
 
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.ConnectionConfiguration;
+import com.google.android.gms.wearable.MessageOptions;
 import com.google.android.gms.wearable.internal.AddListenerRequest;
 import com.google.android.gms.wearable.internal.AncsNotificationParcelable;
 import com.google.android.gms.wearable.internal.PutDataRequest;
@@ -34,6 +35,10 @@ interface IWearableService {
     void deleteDataItemsWithFilter(IWearableCallbacks callbacks, in Uri uri, int typeFilter) = 40;
 
     void sendMessage(IWearableCallbacks callbacks, String targetNodeId, String path, in byte[] data) = 11;
+    // Modern request/response messaging. Explicit IDs generate Binder transactions 57-59.
+    void sendRequest(IWearableCallbacks callbacks, String targetNodeId, String path, in byte[] data) = 56;
+    void sendMessageWithOptions(IWearableCallbacks callbacks, String targetNodeId, String path, in byte[] data, in MessageOptions options) = 57;
+    void sendRequestWithOptions(IWearableCallbacks callbacks, String targetNodeId, String path, in byte[] data, in MessageOptions options) = 58;
     void getFdForAsset(IWearableCallbacks callbacks, in Asset asset) = 12;
 
     void getLocalNode(IWearableCallbacks callbacks) = 13;

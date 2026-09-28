@@ -5,7 +5,6 @@
 
 buildscript {
     ext.cronetVersion = '102.5005.125'
-    ext.wearableVersion = '0.1.1'
 
     ext.kotlinVersion = '1.9.22'
     ext.coroutineVersion = '1.7.3'

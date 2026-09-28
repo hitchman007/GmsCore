@@ -31,6 +31,11 @@ import java.util.UUID;
 public abstract class BluetoothConnectionThread extends Thread {
     private static final String TAG = "GmsWearBt";
 
+    static final int RETRY_POLICY_DEFAULT = 0;
+    static final int RETRY_POLICY_AGGRESSIVE = 1;
+    static final int RETRY_POLICY_LOW_POWER = 2;
+    static final int RETRY_POLICY_OFF = 3;
+
     public static final UUID WEARABLE_BT_UUID =
             UUID.fromString("5e8945b0-9525-11e3-a5e2-0800200c9a66");
     public static final UUID FLOW_UUID =
@@ -53,6 +58,21 @@ public abstract class BluetoothConnectionThread extends Thread {
     }
 
     public abstract void close();
+
+    static long retryDelayMs(int retryPolicy, int failedAttempts) {
+        int attempt = Math.max(1, failedAttempts);
+        switch (retryPolicy) {
+            case RETRY_POLICY_OFF:
+                return -1L;
+            case RETRY_POLICY_AGGRESSIVE:
+                return Math.min(30_000L, 500L << Math.min(attempt - 1, 6));
+            case RETRY_POLICY_LOW_POWER:
+                return Math.min(300_000L, 10_000L << Math.min(attempt - 1, 5));
+            case RETRY_POLICY_DEFAULT:
+            default:
+                return Math.min(60_000L, 1_000L << Math.min(attempt - 1, 6));
+        }
+    }
 
     private static Socket proxySocket(final BluetoothSocket socket) {
         return new Socket() {
@@ -82,12 +102,15 @@ public abstract class BluetoothConnectionThread extends Thread {
     public static BluetoothConnectionThread clientConnect(
             BluetoothDevice device,
             UUID uuid,
-            WearableConnection.Listener listener) {
+            WearableConnection.Listener listener,
+            int retryPolicy) {
         return new BluetoothConnectionThread() {
             private volatile BluetoothSocket socket;
+            private volatile boolean running = true;
 
             @Override
             public void close() {
+                running = false;
                 BluetoothSocket current = socket;
                 socket = null;
                 if (current != null) {
@@ -97,28 +120,56 @@ public abstract class BluetoothConnectionThread extends Thread {
                         Log.w(TAG, "Failed to close Bluetooth client socket", e);
                     }
                 }
+                interrupt();
             }
 
             @Override
             public void run() {
-                BluetoothSocket current = null;
-                try {
-                    current = device.createRfcommSocketToServiceRecord(uuid);
-                    socket = current;
-                    current.connect();
-                    SocketWearableConnection connection =
-                            new SocketWearableConnection(proxySocket(current), listener);
-                    setWearableConnection(connection);
-                    connection.run();
-                } catch (IOException | SecurityException e) {
-                    Log.w(TAG, "Wear OS Bluetooth client connection failed for " + device.getAddress(), e);
-                } finally {
+                int failedAttempts = 0;
+                while (running && !isInterrupted()) {
+                    BluetoothSocket current = null;
+                    boolean connected = false;
                     try {
-                        if (current != null) current.close();
-                    } catch (IOException ignored) {
+                        current = device.createRfcommSocketToServiceRecord(uuid);
+                        socket = current;
+                        current.connect();
+
+                        connected = true;
+                        failedAttempts = 0;
+
+                        SocketWearableConnection connection =
+                                new SocketWearableConnection(proxySocket(current), listener);
+                        setWearableConnection(connection);
+                        connection.run();
+                    } catch (IOException | SecurityException e) {
+                        if (running && !isInterrupted()) {
+                            Log.w(TAG, "Wear OS Bluetooth client connection failed", e);
+                        }
+                    } finally {
+                        try {
+                            if (current != null) current.close();
+                        } catch (IOException ignored) {
+                        }
+                        socket = null;
+                        setWearableConnection(null);
                     }
-                    socket = null;
-                    setWearableConnection(null);
+
+                    if (!running || isInterrupted()) break;
+
+                    failedAttempts = connected ? 1 : failedAttempts + 1;
+                    long delayMs = retryDelayMs(retryPolicy, failedAttempts);
+                    if (delayMs < 0) {
+                        Log.d(TAG, "Automatic Wear OS Bluetooth retry disabled by policy");
+                        break;
+                    }
+
+                    Log.d(TAG, "Retrying Wear OS Bluetooth in " + delayMs + " ms");
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException e) {
+                        interrupt();
+                        break;
+                    }
                 }
             }
         };

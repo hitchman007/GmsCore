@@ -4,6 +4,11 @@
  */
 
 apply plugin: 'com.android.library'
+apply plugin: 'com.squareup.wire'
+
+wire {
+    java { }
+}
 apply plugin: 'kotlin-android'
 apply plugin: 'maven-publish'
 apply plugin: 'signing'
@@ -14,7 +19,7 @@ dependencies {
     implementation project(':play-services-location')
     implementation project(':play-services-wearable')
 
-    implementation "org.microg:wearable:$wearableVersion"
+    implementation "com.squareup.wire:wire-runtime:$wireVersion"
 
     testImplementation 'junit:junit:4.13.2'
 }

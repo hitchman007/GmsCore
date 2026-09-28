@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import com.google.android.gms.common.data.DataHolder;
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.ConnectionConfiguration;
+import com.google.android.gms.wearable.MessageOptions;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.internal.IWearableListener;
 import com.google.android.gms.wearable.internal.MessageEventParcelable;
@@ -75,6 +76,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
 import okio.ByteString;
@@ -92,10 +94,12 @@ public class WearableImpl {
     private final Set<Node> connectedNodes = new HashSet<Node>();
     private final Map<String, WearableConnection> activeConnections = new HashMap<String, WearableConnection>();
     private RpcHelper rpcHelper;
+    private final ChannelControlManager channelManager;
     private SocketConnectionThread sct;
     private BluetoothConnectionThread flowServer;
     private BluetoothConnectionThread flow15Server;
     private final Map<String, BluetoothConnectionThread> bluetoothClients = new HashMap<String, BluetoothConnectionThread>();
+    private final Map<String, PendingRpcRequest> pendingRpcRequests = new ConcurrentHashMap<String, PendingRpcRequest>();
     private ConnectionConfiguration[] configurations;
     private boolean configurationsUpdated = false;
     private ClockworkNodePreferences clockworkNodePreferences;
@@ -108,6 +112,7 @@ public class WearableImpl {
         this.configDatabase = configDatabase;
         this.clockworkNodePreferences = new ClockworkNodePreferences(context);
         this.rpcHelper = new RpcHelper(context);
+        this.channelManager = new ChannelControlManager(this);
         new Thread(() -> {
             Looper.prepare();
             networkHandler = new Handler(Looper.myLooper());
@@ -118,6 +123,14 @@ public class WearableImpl {
 
     public String getLocalNodeId() {
         return clockworkNodePreferences.getLocalNodeId();
+    }
+
+    WearableConnection getActiveConnection(String nodeId) {
+        return activeConnections.get(nodeId);
+    }
+
+    ChannelControlManager getChannelManager() {
+        return channelManager;
     }
 
     public DataItemRecord putDataItem(String packageName, String signatureDigest, String source, DataItemInternal dataItem) {
@@ -412,6 +425,7 @@ public class WearableImpl {
         }
         Log.d(TAG, "Removing connection from list of open connections: " + connection);
         activeConnections.remove(connect.id);
+        channelManager.onNodeDisconnected(connect.id);
         onPeerDisconnected(new NodeParcelable(connect.id, connect.name));
     }
 
@@ -616,7 +630,8 @@ public class WearableImpl {
         BluetoothConnectionThread client = BluetoothConnectionThread.clientConnect(
                 device,
                 BluetoothConnectionThread.WEARABLE_BT_UUID,
-                new MessageHandler(context, this, config));
+                new MessageHandler(context, this, config),
+                config.connectionRetryStrategy);
         bluetoothClients.put(config.address, client);
         client.start();
     }
@@ -675,6 +690,15 @@ public class WearableImpl {
         invokeListeners(intent, listener -> listener.onMessageReceived(messageEvent));
     }
 
+    void sendChannelEvent(String packageName, com.google.android.gms.wearable.internal.ChannelEventParcelable event) {
+        if (event == null || event.channel == null) return;
+        Log.d(TAG, "onChannelEvent: type=" + event.eventType + " channel=" + event.channel.token);
+        Intent intent = new Intent("com.google.android.gms.wearable.CHANNEL_EVENT");
+        intent.setPackage(packageName);
+        intent.setData(Uri.parse("wear://" + event.channel.nodeId + event.channel.path));
+        invokeListeners(intent, listener -> listener.onChannelEvent(event));
+    }
+
     public DataItemRecord getDataItemByUri(Uri uri, String packageName) {
         Cursor cursor = nodeDatabase.getDataItemsByHostAndPath(packageName, PackageUtils.firstSignatureDigest(context, packageName), fixHost(uri.getHost(), true), uri.getPath());
         DataItemRecord record = null;
@@ -715,6 +739,7 @@ public class WearableImpl {
             }
         }
         activeConnections.remove(nodeId);
+        channelManager.onNodeDisconnected(nodeId);
         for (ConnectionConfiguration config : getConfigurations()) {
             if (nodeId.equals(config.nodeId) || nodeId.equals(config.peerNodeId)) {
                 config.connected = false;
@@ -727,18 +752,23 @@ public class WearableImpl {
     public int sendMessage(String packageName, String targetNodeId, String path, byte[] data) {
         if (activeConnections.containsKey(targetNodeId)) {
             WearableConnection connection = activeConnections.get(targetNodeId);
+            PendingRpcRequest pending = consumePendingRpcRequest(targetNodeId, path);
             RpcHelper.RpcConnectionState state = rpcHelper.useConnectionState(packageName, targetNodeId, path);
             try {
-                connection.writeMessage(new RootMessage.Builder().rpcRequest(new Request.Builder()
+                Request.Builder request = new Request.Builder()
                         .targetNodeId(targetNodeId)
                         .path(path)
-                        .rawData(ByteString.of(data))
+                        .rawData(data != null ? ByteString.of(data) : ByteString.EMPTY)
                         .packageName(packageName)
                         .signatureDigest(PackageUtils.firstSignatureDigest(context, packageName))
                         .sourceNodeId(getLocalNodeId())
-                        .generation(state.generation)
+                        .generation(pending != null ? pending.generation : state.generation)
                         .requestId(state.lastRequestId)
-                        .build()).build());
+                        .requiresResponse(false);
+                if (pending != null) {
+                    request.senderRequestId(pending.requestId);
+                }
+                connection.writeMessage(new RootMessage.Builder().rpcRequest(request.build()).build());
             } catch (IOException e) {
                 Log.w(TAG, "Error while writing, closing link", e);
                 closeConnection(targetNodeId);
@@ -748,6 +778,84 @@ public class WearableImpl {
         }
         Log.d(TAG, targetNodeId + " seems not reachable");
         return -1;
+    }
+
+    public int sendMessage(String packageName, String targetNodeId, String path, byte[] data,
+                           MessageOptions options) {
+        return sendMessage(packageName, targetNodeId, path, data);
+    }
+
+    public int sendRequest(String packageName, String targetNodeId, String path, byte[] data,
+                           MessageOptions options, long timeoutMs,
+                           RpcHelper.RpcResponseCallback onResponse,
+                           RpcHelper.RpcTimeoutCallback onTimeout) {
+        WearableConnection connection = activeConnections.get(targetNodeId);
+        if (connection == null) {
+            Log.d(TAG, targetNodeId + " seems not reachable for RPC request");
+            return -1;
+        }
+
+        RpcHelper.RpcConnectionState state =
+                rpcHelper.useConnectionState(packageName, targetNodeId, path);
+        rpcHelper.addResponseListener(
+                targetNodeId, state.generation, state.lastRequestId,
+                timeoutMs, onResponse, onTimeout);
+
+        Request request = new Request.Builder()
+                .targetNodeId(targetNodeId)
+                .path(path)
+                .rawData(data != null ? ByteString.of(data) : ByteString.EMPTY)
+                .packageName(packageName)
+                .signatureDigest(PackageUtils.firstSignatureDigest(context, packageName))
+                .sourceNodeId(getLocalNodeId())
+                .generation(state.generation)
+                .requestId(state.lastRequestId)
+                .requiresResponse(true)
+                .build();
+        try {
+            connection.writeMessage(new RootMessage.Builder().rpcRequest(request).build());
+        } catch (IOException e) {
+            rpcHelper.removeResponseListener(
+                    targetNodeId, state.generation, state.lastRequestId);
+            Log.w(TAG, "Error while writing RPC request, closing link", e);
+            closeConnection(targetNodeId);
+            return -1;
+        }
+        return state.lastRequestId;
+    }
+    private static String pendingRpcKey(String peerNodeId, String path) {
+        return peerNodeId + ":" + path;
+    }
+
+    public void storePendingRpcRequest(PendingRpcRequest request) {
+        pendingRpcRequests.put(pendingRpcKey(request.peerNodeId, request.path), request);
+    }
+
+    public PendingRpcRequest consumePendingRpcRequest(String peerNodeId, String path) {
+        return pendingRpcRequests.remove(pendingRpcKey(peerNodeId, path));
+    }
+
+    public RpcHelper getRpcHelper() {
+        return rpcHelper;
+    }
+
+    public static final class PendingRpcRequest {
+        public final int requestId;
+        public final int generation;
+        public final String path;
+        public final String peerNodeId;
+        public final String packageName;
+        public final WearableConnection connection;
+
+        public PendingRpcRequest(int requestId, int generation, String path, String peerNodeId,
+                                 String packageName, WearableConnection connection) {
+            this.requestId = requestId;
+            this.generation = generation;
+            this.path = path;
+            this.peerNodeId = peerNodeId;
+            this.packageName = packageName;
+            this.connection = connection;
+        }
     }
 
     public void stop() {

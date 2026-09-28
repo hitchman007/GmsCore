@@ -24,6 +24,7 @@ import com.google.android.gms.wearable.internal.GetNodeIdResponse;
 import com.google.android.gms.wearable.internal.OpenChannelResponse;
 import com.google.android.gms.wearable.internal.PutDataResponse;
 import com.google.android.gms.wearable.internal.RemoveLocalCapabilityResponse;
+import com.google.android.gms.wearable.internal.RpcResponse;
 import com.google.android.gms.wearable.internal.SendMessageResponse;
 import com.google.android.gms.wearable.internal.StorageInfoResponse;
 
@@ -48,6 +49,8 @@ interface IWearableCallbacks {
     void onGetConnectedNodesResponse(in GetConnectedNodesResponse response) = 9;
     // AIDL explicit IDs are offsets from FIRST_CALL_TRANSACTION; 37 generates Binder transaction 38.
     void onGetNodeIdResponse(in GetNodeIdResponse response) = 37;
+    // Explicit ID 32 generates Binder transaction 33.
+    void onRpcResponse(in RpcResponse response) = 32;
 
     // Channels
     void onOpenChannelResponse(in OpenChannelResponse response) = 13;
