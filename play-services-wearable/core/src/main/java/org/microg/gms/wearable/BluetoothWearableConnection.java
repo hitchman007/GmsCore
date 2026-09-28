@@ -7,8 +7,6 @@ package org.microg.gms.wearable;
 
 import android.bluetooth.BluetoothSocket;
 
-import com.squareup.wire.Wire;
-
 import org.microg.wearable.WearableConnection;
 import org.microg.wearable.proto.MessagePiece;
 
@@ -38,7 +36,7 @@ final class BluetoothWearableConnection extends WearableConnection {
 
     @Override
     protected synchronized void writeMessagePiece(MessagePiece piece) throws IOException {
-        byte[] bytes = piece.toByteArray();
+        byte[] bytes = piece.encode();
         if (bytes.length > MAX_PIECE_SIZE) {
             throw new IOException("Wearable message piece exceeds " + MAX_PIECE_SIZE + " bytes");
         }
@@ -55,7 +53,7 @@ final class BluetoothWearableConnection extends WearableConnection {
         }
         byte[] bytes = new byte[length];
         input.readFully(bytes);
-        return new Wire().parseFrom(bytes, MessagePiece.class);
+        return MessagePiece.ADAPTER.decode(bytes);
     }
 
     @Override
