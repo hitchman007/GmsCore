@@ -93,6 +93,7 @@ public class WearableImpl {
     private final Set<Node> connectedNodes = new HashSet<Node>();
     private final Map<String, WearableConnection> activeConnections = new HashMap<String, WearableConnection>();
     private RpcHelper rpcHelper;
+    private final ChannelControlManager channelManager;
     private SocketConnectionThread sct;
     private BluetoothConnectionThread flowServer;
     private BluetoothConnectionThread flow15Server;
@@ -110,6 +111,7 @@ public class WearableImpl {
         this.configDatabase = configDatabase;
         this.clockworkNodePreferences = new ClockworkNodePreferences(context);
         this.rpcHelper = new RpcHelper(context);
+        this.channelManager = new ChannelControlManager(this);
         new Thread(() -> {
             Looper.prepare();
             networkHandler = new Handler(Looper.myLooper());
@@ -120,6 +122,14 @@ public class WearableImpl {
 
     public String getLocalNodeId() {
         return clockworkNodePreferences.getLocalNodeId();
+    }
+
+    WearableConnection getActiveConnection(String nodeId) {
+        return activeConnections.get(nodeId);
+    }
+
+    ChannelControlManager getChannelManager() {
+        return channelManager;
     }
 
     public DataItemRecord putDataItem(String packageName, String signatureDigest, String source, DataItemInternal dataItem) {
@@ -414,6 +424,7 @@ public class WearableImpl {
         }
         Log.d(TAG, "Removing connection from list of open connections: " + connection);
         activeConnections.remove(connect.id);
+        channelManager.onNodeDisconnected(connect.id);
         onPeerDisconnected(new NodeParcelable(connect.id, connect.name));
     }
 
@@ -678,6 +689,15 @@ public class WearableImpl {
         invokeListeners(intent, listener -> listener.onMessageReceived(messageEvent));
     }
 
+    void sendChannelEvent(String packageName, com.google.android.gms.wearable.internal.ChannelEventParcelable event) {
+        if (event == null || event.channel == null) return;
+        Log.d(TAG, "onChannelEvent: type=" + event.eventType + " channel=" + event.channel.token);
+        Intent intent = new Intent("com.google.android.gms.wearable.CHANNEL_EVENT");
+        intent.setPackage(packageName);
+        intent.setData(Uri.parse("wear://" + event.channel.nodeId + event.channel.path));
+        invokeListeners(intent, listener -> listener.onChannelEvent(event));
+    }
+
     public DataItemRecord getDataItemByUri(Uri uri, String packageName) {
         Cursor cursor = nodeDatabase.getDataItemsByHostAndPath(packageName, PackageUtils.firstSignatureDigest(context, packageName), fixHost(uri.getHost(), true), uri.getPath());
         DataItemRecord record = null;
@@ -718,6 +738,7 @@ public class WearableImpl {
             }
         }
         activeConnections.remove(nodeId);
+        channelManager.onNodeDisconnected(nodeId);
         for (ConnectionConfiguration config : getConfigurations()) {
             if (nodeId.equals(config.nodeId) || nodeId.equals(config.peerNodeId)) {
                 config.connected = false;

@@ -8,6 +8,7 @@ package org.microg.gms.wearable;
 import android.os.RemoteException;
 
 import com.google.android.gms.common.data.DataHolder;
+import com.google.android.gms.wearable.ChannelApi;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEventBuffer;
 import com.google.android.gms.wearable.MessageApi;
@@ -21,38 +22,37 @@ import com.google.android.gms.wearable.internal.MessageEventParcelable;
 import com.google.android.gms.wearable.internal.NodeParcelable;
 
 import java.util.List;
-
-/**
- * Binder listener used by the legacy Wearable APIs.
- *
- * Each API implementation keeps the same adapter instance until removeListener
- * so the service can unregister the exact binder that was registered.
- */
 final class WearableListenerAdapter extends IWearableListener.Stub {
     private final NodeApi.NodeListener nodeListener;
     private final DataApi.DataListener dataListener;
     private final MessageApi.MessageListener messageListener;
+    private final ChannelApi.ChannelListener channelListener;
 
     private WearableListenerAdapter(NodeApi.NodeListener nodeListener,
                                     DataApi.DataListener dataListener,
-                                    MessageApi.MessageListener messageListener) {
+                                    MessageApi.MessageListener messageListener,
+                                    ChannelApi.ChannelListener channelListener) {
         this.nodeListener = nodeListener;
         this.dataListener = dataListener;
         this.messageListener = messageListener;
+        this.channelListener = channelListener;
     }
 
     static WearableListenerAdapter forNode(NodeApi.NodeListener listener) {
-        return new WearableListenerAdapter(listener, null, null);
+        return new WearableListenerAdapter(listener, null, null, null);
     }
 
     static WearableListenerAdapter forData(DataApi.DataListener listener) {
-        return new WearableListenerAdapter(null, listener, null);
+        return new WearableListenerAdapter(null, listener, null, null);
     }
 
     static WearableListenerAdapter forMessage(MessageApi.MessageListener listener) {
-        return new WearableListenerAdapter(null, null, listener);
+        return new WearableListenerAdapter(null, null, listener, null);
     }
 
+    static WearableListenerAdapter forChannel(ChannelApi.ChannelListener listener) {
+        return new WearableListenerAdapter(null, null, null, listener);
+    }
     @Override
     public void onDataChanged(DataHolder data) throws RemoteException {
         if (dataListener != null) {
@@ -84,17 +84,37 @@ final class WearableListenerAdapter extends IWearableListener.Stub {
     @Override
     public void onConnectedNodes(List<NodeParcelable> nodes) throws RemoteException {
     }
-
     @Override
     public void onNotificationReceived(AncsNotificationParcelable notification) throws RemoteException {
     }
 
     @Override
     public void onChannelEvent(ChannelEventParcelable channelEvent) throws RemoteException {
+        if (channelListener == null || channelEvent == null || channelEvent.channel == null) return;
+        ChannelImpl channel = new ChannelImpl(channelEvent.channel);
+        switch (channelEvent.eventType) {
+            case 1:
+                channelListener.onChannelOpened(channel);
+                break;
+            case 2:
+                channelListener.onChannelClosed(
+                        channel, channelEvent.closeReason, channelEvent.appSpecificErrorCode);
+                break;
+            case 3:
+                channelListener.onInputClosed(
+                        channel, channelEvent.closeReason, channelEvent.appSpecificErrorCode);
+                break;
+            case 4:
+                channelListener.onOutputClosed(
+                        channel, channelEvent.closeReason, channelEvent.appSpecificErrorCode);
+                break;
+            default:
+                break;
+        }
     }
-
     @Override
-    public void onConnectedCapabilityChanged(CapabilityInfoParcelable capabilityInfo) throws RemoteException {
+    public void onConnectedCapabilityChanged(CapabilityInfoParcelable capabilityInfo)
+            throws RemoteException {
     }
 
     @Override

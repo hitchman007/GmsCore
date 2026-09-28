@@ -227,5 +227,6 @@ public class MessageHandler extends ServerMessageListener {
     @Override
     public void onChannelRequest(Request channelRequest) {
         Log.d(TAG, "onChannelRequest:" + channelRequest);
+        wearable.getChannelManager().onChannelRequest(getConnection(), peerNodeId, channelRequest);
     }
 }

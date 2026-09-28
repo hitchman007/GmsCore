@@ -455,8 +455,10 @@ public class WearableServiceImpl extends IWearableService.Stub {
     }
 
     @Override
-    public void openChannel(IWearableCallbacks callbacks, String s1, String s2) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: openChannel; " + s1 + ", " + s2);
+    public void openChannel(IWearableCallbacks callbacks, String nodeId, String path) throws RemoteException {
+        Log.d(TAG, "openChannel: " + nodeId + ", " + path);
+        wearable.networkHandler.post(() ->
+                wearable.getChannelManager().openChannel(packageName, nodeId, path, callbacks));
     }
 
     /*
@@ -464,14 +466,17 @@ public class WearableServiceImpl extends IWearableService.Stub {
      */
 
     @Override
-    public void closeChannel(IWearableCallbacks callbacks, String s) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: closeChannel: " + s);
+    public void closeChannel(IWearableCallbacks callbacks, String token) throws RemoteException {
+        Log.d(TAG, "closeChannel: " + token);
+        wearable.networkHandler.post(() ->
+                wearable.getChannelManager().closeChannel(token, 0, callbacks));
     }
 
     @Override
-    public void closeChannelWithError(IWearableCallbacks callbacks, String s, int errorCode) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: closeChannelWithError:" + s + ", " + errorCode);
-
+    public void closeChannelWithError(IWearableCallbacks callbacks, String token, int errorCode) throws RemoteException {
+        Log.d(TAG, "closeChannelWithError: " + token + ", " + errorCode);
+        wearable.networkHandler.post(() ->
+                wearable.getChannelManager().closeChannel(token, errorCode, callbacks));
     }
 
     @Override
