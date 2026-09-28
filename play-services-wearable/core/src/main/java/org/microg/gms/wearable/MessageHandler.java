@@ -42,6 +42,8 @@ import org.microg.wearable.proto.SyncTableEntry;
 import java.io.IOException;
 import java.util.Arrays;
 
+import okio.ByteString;
+
 public class MessageHandler extends ServerMessageListener {
     private static final String TAG = "GmsWearMsgHandler";
     private final WearableImpl wearable;
@@ -142,11 +144,60 @@ public class MessageHandler extends ServerMessageListener {
     @Override
     public void onRpcRequest(Request rpcRequest) {
         Log.d(TAG, "onRpcRequest: " + rpcRequest);
+
+        if (Boolean.TRUE.equals(rpcRequest.requiresResponse)
+                && rpcRequest.requestId != null
+                && peerNodeId != null
+                && rpcRequest.path != null) {
+            wearable.storePendingRpcRequest(new WearableImpl.PendingRpcRequest(
+                    rpcRequest.requestId,
+                    rpcRequest.generation != null ? rpcRequest.generation : 0,
+                    rpcRequest.path,
+                    peerNodeId,
+                    rpcRequest.packageName != null ? rpcRequest.packageName : "",
+                    getConnection()
+            ));
+
+            if (rpcRequest.path.startsWith("/clockworkSetupWizard/")) {
+                final String pendingPeer = peerNodeId;
+                final String pendingPath = rpcRequest.path;
+                wearable.networkHandler.postDelayed(() -> {
+                    WearableImpl.PendingRpcRequest pending =
+                            wearable.consumePendingRpcRequest(pendingPeer, pendingPath);
+                    if (pending == null) return;
+
+                    try {
+                        RpcHelper.RpcConnectionState state = wearable.getRpcHelper()
+                                .useConnectionState(pending.packageName, pending.peerNodeId, pending.path);
+                        pending.connection.writeMessage(new RootMessage.Builder().rpcRequest(
+                                new Request.Builder()
+                                        .requestId(state.lastRequestId)
+                                        .generation(pending.generation)
+                                        .senderRequestId(pending.requestId)
+                                        .requiresResponse(false)
+                                        .path(pending.path)
+                                        .rawData(ByteString.EMPTY)
+                                        .packageName(pending.packageName)
+                                        .sourceNodeId(wearable.getLocalNodeId())
+                                        .targetNodeId(pending.peerNodeId)
+                                        .build()
+                        ).build());
+                        Log.d(TAG, "Sent setup RPC ACK for " + pending.path
+                                + " senderRequestId=" + pending.requestId);
+                    } catch (IOException e) {
+                        Log.w(TAG, "Failed to send setup RPC ACK for " + pending.path, e);
+                    }
+                }, 500);
+            }
+        }
+
         if (TextUtils.isEmpty(rpcRequest.targetNodeId) || rpcRequest.targetNodeId.equals(wearable.getLocalNodeId())) {
+            int requestId = rpcRequest.requestId != null ? rpcRequest.requestId : 0;
+            int generation = rpcRequest.generation != null ? rpcRequest.generation : 0;
             MessageEventParcelable messageEvent = new MessageEventParcelable();
             messageEvent.data = rpcRequest.rawData != null ? rpcRequest.rawData.toByteArray() : null;
             messageEvent.path = rpcRequest.path;
-            messageEvent.requestId = rpcRequest.requestId + 31 * (rpcRequest.generation + 527);
+            messageEvent.requestId = requestId + 31 * (generation + 527);
             messageEvent.sourceNodeId = TextUtils.isEmpty(rpcRequest.sourceNodeId) ? peerNodeId : rpcRequest.sourceNodeId;
 
             wearable.sendMessageReceived(rpcRequest.packageName, messageEvent);
