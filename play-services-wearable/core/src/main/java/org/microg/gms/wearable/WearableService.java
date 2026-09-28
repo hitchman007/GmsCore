@@ -28,6 +28,8 @@ import org.microg.gms.BaseService;
 import org.microg.gms.common.GmsService;
 import org.microg.gms.common.PackageUtils;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 public class WearableService extends BaseService {
 
     public static final Feature[] FEATURES = new Feature[]{
@@ -66,7 +68,13 @@ public class WearableService extends BaseService {
             new Feature("wear_notify_channel_flushed", 1L)
     };
 
+    private static final AtomicReference<WearableImpl> ACTIVE = new AtomicReference<>();
+
     private WearableImpl wearable;
+
+    public static WearableImpl getInstance() {
+        return ACTIVE.get();
+    }
 
     public WearableService() {
         super("GmsWearSvc", GmsService.WEAR);
@@ -78,12 +86,16 @@ public class WearableService extends BaseService {
         ConfigurationDatabaseHelper configurationDatabaseHelper = new ConfigurationDatabaseHelper(getApplicationContext());
         NodeDatabaseHelper nodeDatabaseHelper = new NodeDatabaseHelper(getApplicationContext());
         wearable = new WearableImpl(getApplicationContext(), nodeDatabaseHelper, configurationDatabaseHelper);
+        ACTIVE.set(wearable);
+        MediaBridge.start(getApplicationContext(), wearable);
     }
 
     @Override
     public void onDestroy() {
+        MediaBridge.stop(getApplicationContext());
+        ACTIVE.compareAndSet(wearable, null);
+        if (wearable != null) wearable.stop();
         super.onDestroy();
-        wearable.stop();
     }
 
     @Override
