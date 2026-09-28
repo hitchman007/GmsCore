@@ -121,6 +121,18 @@ public class WearableServiceImpl extends IWearableService.Stub {
         });
     }
 
+    @Override
+    public void getRelatedConfigs(IWearableCallbacks callbacks) throws RemoteException {
+        Log.d(TAG, "getRelatedConfigs");
+        getConfigs(callbacks);
+    }
+
+    @Override
+    public void updateConfig(IWearableCallbacks callbacks, ConnectionConfiguration config) throws RemoteException {
+        Log.d(TAG, "updateConfig: " + config);
+        putConfig(callbacks, config);
+    }
+
     /*
      * DataItems
      */
