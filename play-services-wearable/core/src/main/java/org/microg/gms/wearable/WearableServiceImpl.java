@@ -446,14 +446,12 @@ public class WearableServiceImpl extends IWearableService.Stub {
 
     @Override
     public void doAncsPositiveAction(IWearableCallbacks callbacks, int i) throws RemoteException {
-        boolean handled = NotificationBridge.doPositiveAction(context, i);
-        callbacks.onStatus(handled ? Status.SUCCESS : new Status(8));
+        Log.d(TAG, "unimplemented Method: doAncsPositiveAction: " + i);
     }
 
     @Override
     public void doAncsNegativeAction(IWearableCallbacks callbacks, int i) throws RemoteException {
-        boolean handled = NotificationBridge.doNegativeAction(context, i);
-        callbacks.onStatus(handled ? Status.SUCCESS : new Status(8));
+        Log.d(TAG, "unimplemented Method: doAncsNegativeAction: " + i);
     }
 
     @Override
