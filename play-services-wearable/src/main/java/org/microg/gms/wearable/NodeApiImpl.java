@@ -16,29 +16,150 @@
 
 package org.microg.gms.wearable;
 
+import android.content.IntentFilter;
+import android.os.RemoteException;
+
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.PendingResult;
 import com.google.android.gms.common.api.Status;
+import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.NodeApi;
+import com.google.android.gms.wearable.Wearable;
+import com.google.android.gms.wearable.internal.AddListenerRequest;
+import com.google.android.gms.wearable.internal.GetConnectedNodesResponse;
+import com.google.android.gms.wearable.internal.GetLocalNodeResponse;
+import com.google.android.gms.wearable.internal.IWearableListener;
+import com.google.android.gms.wearable.internal.RemoveListenerRequest;
+
+import org.microg.gms.common.GmsConnector;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 
 public class NodeApiImpl implements NodeApi {
+    private final Map<NodeListener, IWearableListener> listeners =
+            Collections.synchronizedMap(new IdentityHashMap<NodeListener, IWearableListener>());
+
     @Override
-    public PendingResult<Status> addListener(GoogleApiClient client, NodeListener listener) {
-        throw new UnsupportedOperationException();
+    public PendingResult<Status> addListener(GoogleApiClient client, final NodeListener listener) {
+        return GmsConnector.call(client, Wearable.API,
+                new GmsConnector.Callback<WearableClientImpl, Status>() {
+                    @Override
+                    public void onClientAvailable(WearableClientImpl client,
+                                                  final ResultProvider<Status> resultProvider)
+                            throws RemoteException {
+                        IWearableListener adapter = listeners.get(listener);
+                        if (adapter == null) {
+                            adapter = WearableListenerAdapter.forNode(listener);
+                            listeners.put(listener, adapter);
+                        }
+                        final IWearableListener registered = adapter;
+                        client.getServiceInterface().addListener(new BaseWearableCallbacks() {
+                            @Override
+                            public void onStatus(Status status) throws RemoteException {
+                                if (!status.isSuccess()) listeners.remove(listener);
+                                resultProvider.onResultAvailable(status);
+                            }
+                        }, new AddListenerRequest(registered, new IntentFilter[0], null));
+                    }
+                });
     }
 
     @Override
     public PendingResult<GetConnectedNodesResult> getConnectedNodes(GoogleApiClient client) {
-        throw new UnsupportedOperationException();
+        return GmsConnector.call(client, Wearable.API,
+                new GmsConnector.Callback<WearableClientImpl, GetConnectedNodesResult>() {
+                    @Override
+                    public void onClientAvailable(WearableClientImpl client,
+                                                  final ResultProvider<GetConnectedNodesResult> resultProvider)
+                            throws RemoteException {
+                        client.getServiceInterface().getConnectedNodes(new BaseWearableCallbacks() {
+                            @Override
+                            public void onGetConnectedNodesResponse(GetConnectedNodesResponse response)
+                                    throws RemoteException {
+                                resultProvider.onResultAvailable(new GetConnectedNodesResultImpl(response));
+                            }
+                        });
+                    }
+                });
     }
 
     @Override
     public PendingResult<GetLocalNodeResult> getLocalNode(GoogleApiClient client) {
-        throw new UnsupportedOperationException();
+        return GmsConnector.call(client, Wearable.API,
+                new GmsConnector.Callback<WearableClientImpl, GetLocalNodeResult>() {
+                    @Override
+                    public void onClientAvailable(WearableClientImpl client,
+                                                  final ResultProvider<GetLocalNodeResult> resultProvider)
+                            throws RemoteException {
+                        client.getServiceInterface().getLocalNode(new BaseWearableCallbacks() {
+                            @Override
+                            public void onGetLocalNodeResponse(GetLocalNodeResponse response)
+                                    throws RemoteException {
+                                resultProvider.onResultAvailable(new GetLocalNodeResultImpl(response));
+                            }
+                        });
+                    }
+                });
     }
 
     @Override
-    public PendingResult<Status> removeListener(GoogleApiClient client, NodeListener listener) {
-        throw new UnsupportedOperationException();
+    public PendingResult<Status> removeListener(GoogleApiClient client, final NodeListener listener) {
+        return GmsConnector.call(client, Wearable.API,
+                new GmsConnector.Callback<WearableClientImpl, Status>() {
+                    @Override
+                    public void onClientAvailable(WearableClientImpl client,
+                                                  final ResultProvider<Status> resultProvider)
+                            throws RemoteException {
+                        final IWearableListener adapter = listeners.get(listener);
+                        client.getServiceInterface().removeListener(new BaseWearableCallbacks() {
+                            @Override
+                            public void onStatus(Status status) throws RemoteException {
+                                if (status.isSuccess()) listeners.remove(listener);
+                                resultProvider.onResultAvailable(status);
+                            }
+                        }, new RemoveListenerRequest(adapter));
+                    }
+                });
+    }
+
+    private static class GetConnectedNodesResultImpl implements GetConnectedNodesResult {
+        private final GetConnectedNodesResponse response;
+
+        private GetConnectedNodesResultImpl(GetConnectedNodesResponse response) {
+            this.response = response;
+        }
+
+        @Override
+        public List<Node> getNodes() {
+            if (response.nodes == null) return Collections.emptyList();
+            return new ArrayList<Node>(response.nodes);
+        }
+
+        @Override
+        public Status getStatus() {
+            return new Status(response.statusCode);
+        }
+    }
+
+    private static class GetLocalNodeResultImpl implements GetLocalNodeResult {
+        private final GetLocalNodeResponse response;
+
+        private GetLocalNodeResultImpl(GetLocalNodeResponse response) {
+            this.response = response;
+        }
+
+        @Override
+        public Node getNode() {
+            return response.node;
+        }
+
+        @Override
+        public Status getStatus() {
+            return new Status(response.statusCode);
+        }
     }
 }

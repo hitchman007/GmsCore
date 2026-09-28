@@ -46,6 +46,7 @@ description = 'microG implementation of play-services-wearable'
 
 dependencies {
     implementation "com.squareup.wire:wire-runtime:$wireVersion"
+    testImplementation 'junit:junit:4.13.2'
 
     // Dependencies from play-services-wearable:17.1.0
     api "androidx.core:core:1.0.0"

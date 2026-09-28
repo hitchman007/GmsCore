@@ -41,6 +41,10 @@ public class ConnectionConfiguration extends AutoSafeParcelable {
     public boolean btlePriority = true;
     @SafeParceled(10)
     public String nodeId;
+    @SafeParceled(11)
+    public String packageName;
+    @SafeParceled(12)
+    public int connectionRetryStrategy;
 
     private ConnectionConfiguration() {
         name = address = null;
@@ -77,6 +81,8 @@ public class ConnectionConfiguration extends AutoSafeParcelable {
         sb.append(", peerNodeId='").append(peerNodeId).append('\'');
         sb.append(", btlePriority=").append(btlePriority);
         sb.append(", nodeId='").append(nodeId).append('\'');
+        sb.append(", packageName='").append(packageName).append('\'');
+        sb.append(", connectionRetryStrategy=").append(connectionRetryStrategy);
         sb.append('}');
         return sb.toString();
     }
