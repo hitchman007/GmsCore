@@ -17,6 +17,8 @@ import com.google.android.gms.wearable.Channel;
 import com.google.android.gms.wearable.ChannelApi;
 import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.internal.ChannelParcelable;
+import com.google.android.gms.wearable.internal.ChannelReceiveFileResponse;
+import com.google.android.gms.wearable.internal.ChannelSendFileResponse;
 import com.google.android.gms.wearable.internal.CloseChannelResponse;
 import com.google.android.gms.wearable.internal.GetChannelInputStreamResponse;
 import com.google.android.gms.wearable.internal.GetChannelOutputStreamResponse;
@@ -154,8 +156,44 @@ public class ChannelImpl extends ChannelParcelable implements Channel {
     }
     @Override
     public PendingResult<Status> receiveFile(GoogleApiClient client, Uri uri, boolean append) {
-        Log.d(TAG, "unimplemented Method: receiveFile");
-        return null;
+        return GmsConnector.call(client, Wearable.API,
+                new GmsConnector.Callback<WearableClientImpl, Status>() {
+                    @Override
+                    public void onClientAvailable(WearableClientImpl client,
+                                                  final ResultProvider<Status> resultProvider)
+                            throws RemoteException {
+                        ParcelFileDescriptor descriptor = null;
+                        try {
+                            descriptor = client.getContext().getContentResolver()
+                                    .openFileDescriptor(uri, append ? "wa" : "w");
+                            if (descriptor == null) {
+                                resultProvider.onResultAvailable(new Status(8));
+                                return;
+                            }
+                            BaseWearableCallbacks callbacks = new BaseWearableCallbacks() {
+                                @Override
+                                public void onChannelReceiveFileResponse(
+                                        ChannelReceiveFileResponse response)
+                                        throws RemoteException {
+                                    resultProvider.onResultAvailable(
+                                            new Status(response != null ? response.status : 8));
+                                }
+                            };
+                            client.getServiceInterface().writeChannelInputToFd(
+                                    callbacks, token, descriptor);
+                        } catch (IOException | RuntimeException e) {
+                            Log.w(TAG, "receiveFile failed for " + uri, e);
+                            resultProvider.onResultAvailable(new Status(8));
+                        } finally {
+                            if (descriptor != null) {
+                                try {
+                                    descriptor.close();
+                                } catch (IOException ignored) {
+                                }
+                            }
+                        }
+                    }
+                });
     }
 
     @Override
@@ -166,15 +204,55 @@ public class ChannelImpl extends ChannelParcelable implements Channel {
 
     @Override
     public PendingResult<Status> sendFile(GoogleApiClient client, Uri uri) {
-        Log.d(TAG, "unimplemented Method: sendFile");
-        return null;
+        return sendFile(client, uri, 0L, -1L);
     }
 
     @Override
     public PendingResult<Status> sendFile(GoogleApiClient client, Uri uri,
                                           long startOffset, long length) {
-        Log.d(TAG, "unimplemented Method: sendFile");
-        return null;
+        return GmsConnector.call(client, Wearable.API,
+                new GmsConnector.Callback<WearableClientImpl, Status>() {
+                    @Override
+                    public void onClientAvailable(WearableClientImpl client,
+                                                  final ResultProvider<Status> resultProvider)
+                            throws RemoteException {
+                        if (startOffset < 0 || length < -1) {
+                            resultProvider.onResultAvailable(new Status(8));
+                            return;
+                        }
+
+                        ParcelFileDescriptor descriptor = null;
+                        try {
+                            descriptor = client.getContext().getContentResolver()
+                                    .openFileDescriptor(uri, "r");
+                            if (descriptor == null) {
+                                resultProvider.onResultAvailable(new Status(8));
+                                return;
+                            }
+                            BaseWearableCallbacks callbacks = new BaseWearableCallbacks() {
+                                @Override
+                                public void onChannelSendFileResponse(
+                                        ChannelSendFileResponse response)
+                                        throws RemoteException {
+                                    resultProvider.onResultAvailable(
+                                            new Status(response != null ? response.status : 8));
+                                }
+                            };
+                            client.getServiceInterface().readChannelOutputFromFd(
+                                    callbacks, token, descriptor, startOffset, length);
+                        } catch (IOException | RuntimeException e) {
+                            Log.w(TAG, "sendFile failed for " + uri, e);
+                            resultProvider.onResultAvailable(new Status(8));
+                        } finally {
+                            if (descriptor != null) {
+                                try {
+                                    descriptor.close();
+                                } catch (IOException ignored) {
+                                }
+                            }
+                        }
+                    }
+                });
     }
 
     private static final class InputStreamResultImpl implements GetInputStreamResult {

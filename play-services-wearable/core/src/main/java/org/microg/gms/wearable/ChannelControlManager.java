@@ -198,7 +198,7 @@ final class ChannelControlManager {
         ParcelFileDescriptor appEnd;
         synchronized (record.streamLock) {
             if (record.outputReader != null) {
-                sendOutputStreamResult(callbacks, STATUS_INTERNAL_ERROR, null);
+                sendOutputStreamResult(callbacks, STATUS_ALREADY_IN_PROGRESS, null);
                 return;
             }
             try {
@@ -207,7 +207,7 @@ final class ChannelControlManager {
                 appEnd = pipe[1];
                 record.outputCallbacks = streamCallbacks;
                 record.outputOpened = true;
-                startOutputReader(record);
+                startOutputReader(record, 0L, -1L);
             } catch (IOException e) {
                 Log.w(TAG, "Unable to create output channel pipe", e);
                 sendOutputStreamResult(callbacks, STATUS_INTERNAL_ERROR, null);
@@ -217,6 +217,61 @@ final class ChannelControlManager {
 
         sendOutputStreamResult(callbacks, STATUS_SUCCESS, appEnd);
         closeQuietly(appEnd);
+    }
+
+    int attachInputFile(String token, ParcelFileDescriptor descriptor,
+                        IChannelStreamCallbacks streamCallbacks) {
+        ChannelRecord record = byToken.get(token);
+        if (record == null) {
+            closeQuietly(descriptor);
+            return STATUS_NOT_FOUND;
+        }
+        if (record.state != STATE_ESTABLISHED) {
+            closeQuietly(descriptor);
+            return STATUS_NOT_CONNECTED;
+        }
+        if (descriptor == null) return STATUS_INTERNAL_ERROR;
+
+        synchronized (record.streamLock) {
+            if (record.inputWriter != null) {
+                closeQuietly(descriptor);
+                return STATUS_ALREADY_IN_PROGRESS;
+            }
+            record.inputWriter = new ParcelFileDescriptor.AutoCloseOutputStream(descriptor);
+            record.inputCallbacks = streamCallbacks;
+            record.inputOpened = true;
+            startInputWriter(record);
+        }
+        return STATUS_SUCCESS;
+    }
+
+    int attachOutputFile(String token, ParcelFileDescriptor descriptor, long startOffset,
+                         long length, IChannelStreamCallbacks streamCallbacks) {
+        ChannelRecord record = byToken.get(token);
+        if (record == null) {
+            closeQuietly(descriptor);
+            return STATUS_NOT_FOUND;
+        }
+        if (record.state != STATE_ESTABLISHED) {
+            closeQuietly(descriptor);
+            return STATUS_NOT_CONNECTED;
+        }
+        if (descriptor == null || startOffset < 0 || length < -1) {
+            closeQuietly(descriptor);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        synchronized (record.streamLock) {
+            if (record.outputReader != null) {
+                closeQuietly(descriptor);
+                return STATUS_ALREADY_IN_PROGRESS;
+            }
+            record.outputReader = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+            record.outputCallbacks = streamCallbacks;
+            record.outputOpened = true;
+            startOutputReader(record, startOffset, length);
+        }
+        return STATUS_SUCCESS;
     }
     void onChannelRequest(WearableConnection connection, String sourceNodeId, Request request) {
         if (connection == null || sourceNodeId == null || request == null || request.request == null) {
@@ -428,12 +483,35 @@ final class ChannelControlManager {
         record.inputThread.start();
     }
 
-    private void startOutputReader(ChannelRecord record) {
+    private void startOutputReader(ChannelRecord record, long startOffset, long length) {
         record.outputThread = new Thread(() -> {
             byte[] buffer = new byte[DATA_CHUNK_SIZE];
             try {
+                long remainingSkip = startOffset;
+                while (remainingSkip > 0) {
+                    long skipped = record.outputReader.skip(remainingSkip);
+                    if (skipped > 0) {
+                        remainingSkip -= skipped;
+                    } else if (record.outputReader.read() >= 0) {
+                        remainingSkip--;
+                    } else {
+                        sendChunkAndAwaitAck(record, new byte[0], true);
+                        notifyOutputClosed(record, ChannelApi.ChannelListener.CLOSE_REASON_NORMAL, 0);
+                        return;
+                    }
+                }
+
+                long remaining = length;
                 while (record.state != STATE_CLOSED && !Thread.currentThread().isInterrupted()) {
-                    int count = record.outputReader.read(buffer);
+                    if (remaining == 0) {
+                        sendChunkAndAwaitAck(record, new byte[0], true);
+                        notifyOutputClosed(record, ChannelApi.ChannelListener.CLOSE_REASON_NORMAL, 0);
+                        break;
+                    }
+                    int maxRead = remaining > 0
+                            ? (int) Math.min((long) buffer.length, remaining)
+                            : buffer.length;
+                    int count = record.outputReader.read(buffer, 0, maxRead);
                     if (count < 0) {
                         sendChunkAndAwaitAck(record, new byte[0], true);
                         notifyOutputClosed(record, ChannelApi.ChannelListener.CLOSE_REASON_NORMAL, 0);
@@ -447,6 +525,7 @@ final class ChannelControlManager {
                         notifyOutputClosed(record, ChannelApi.ChannelListener.CLOSE_REASON_DISCONNECTED, 0);
                         break;
                     }
+                    if (remaining > 0) remaining -= count;
                 }
             } catch (IOException e) {
                 Log.w(TAG, "Channel output pipe failed for " + record.token, e);

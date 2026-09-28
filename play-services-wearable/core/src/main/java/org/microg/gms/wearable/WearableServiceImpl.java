@@ -494,13 +494,73 @@ public class WearableServiceImpl extends IWearableService.Stub {
     }
 
     @Override
-    public void writeChannelInputToFd(IWearableCallbacks callbacks, String s, ParcelFileDescriptor fd) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: writeChannelInputToFd: " + s);
+    public void writeChannelInputToFd(IWearableCallbacks callbacks, String token, ParcelFileDescriptor fd) throws RemoteException {
+        Log.d(TAG, "writeChannelInputToFd: " + token);
+        final ParcelFileDescriptor ownedFd;
+        try {
+            ownedFd = fd != null ? ParcelFileDescriptor.dup(fd.getFileDescriptor()) : null;
+        } catch (java.io.IOException e) {
+            callbacks.onChannelReceiveFileResponse(
+                    new ChannelReceiveFileResponse(ChannelControlManager.STATUS_INTERNAL_ERROR));
+            return;
+        }
+        wearable.networkHandler.post(() -> {
+            IChannelStreamCallbacks streamCallbacks = new IChannelStreamCallbacks.Stub() {
+                @Override
+                public void onChannelClosed(int closeReason, int appSpecificErrorCode) throws RemoteException {
+                    int status = closeReason == 0
+                            ? ChannelControlManager.STATUS_SUCCESS
+                            : (appSpecificErrorCode != 0
+                                    ? appSpecificErrorCode
+                                    : ChannelControlManager.STATUS_NOT_CONNECTED);
+                    callbacks.onChannelReceiveFileResponse(new ChannelReceiveFileResponse(status));
+                }
+            };
+            int status = wearable.getChannelManager().attachInputFile(token, ownedFd, streamCallbacks);
+            if (status != ChannelControlManager.STATUS_SUCCESS) {
+                try {
+                    callbacks.onChannelReceiveFileResponse(new ChannelReceiveFileResponse(status));
+                } catch (RemoteException e) {
+                    Log.w(TAG, "Unable to deliver receiveFile error", e);
+                }
+            }
+        });
     }
 
     @Override
-    public void readChannelOutputFromFd(IWearableCallbacks callbacks, String s, ParcelFileDescriptor fd, long l1, long l2) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: readChannelOutputFromFd: " + s + ", " + l1 + ", " + l2);
+    public void readChannelOutputFromFd(IWearableCallbacks callbacks, String token, ParcelFileDescriptor fd,
+                                        long startOffset, long length) throws RemoteException {
+        Log.d(TAG, "readChannelOutputFromFd: " + token + ", " + startOffset + ", " + length);
+        final ParcelFileDescriptor ownedFd;
+        try {
+            ownedFd = fd != null ? ParcelFileDescriptor.dup(fd.getFileDescriptor()) : null;
+        } catch (java.io.IOException e) {
+            callbacks.onChannelSendFileResponse(
+                    new ChannelSendFileResponse(ChannelControlManager.STATUS_INTERNAL_ERROR));
+            return;
+        }
+        wearable.networkHandler.post(() -> {
+            IChannelStreamCallbacks streamCallbacks = new IChannelStreamCallbacks.Stub() {
+                @Override
+                public void onChannelClosed(int closeReason, int appSpecificErrorCode) throws RemoteException {
+                    int status = closeReason == 0
+                            ? ChannelControlManager.STATUS_SUCCESS
+                            : (appSpecificErrorCode != 0
+                                    ? appSpecificErrorCode
+                                    : ChannelControlManager.STATUS_NOT_CONNECTED);
+                    callbacks.onChannelSendFileResponse(new ChannelSendFileResponse(status));
+                }
+            };
+            int status = wearable.getChannelManager().attachOutputFile(
+                    token, ownedFd, startOffset, length, streamCallbacks);
+            if (status != ChannelControlManager.STATUS_SUCCESS) {
+                try {
+                    callbacks.onChannelSendFileResponse(new ChannelSendFileResponse(status));
+                } catch (RemoteException e) {
+                    Log.w(TAG, "Unable to deliver sendFile error", e);
+                }
+            }
+        });
     }
 
     @Override
