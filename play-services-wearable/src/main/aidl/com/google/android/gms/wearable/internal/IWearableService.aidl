@@ -79,4 +79,8 @@ interface IWearableService {
     void getConnection(IWearableCallbacks callbacks) = 2;
     void enableConnection(IWearableCallbacks callbacks) = 3;
     void disableConnection(IWearableCallbacks callbacks) = 4;
+
+    // Newer companion compatibility observed during real WearOS setup.
+    void getRelatedConfigs(IWearableCallbacks callbacks) = 72;
+    void updateConfig(IWearableCallbacks callbacks, in ConnectionConfiguration config) = 73;
 }
