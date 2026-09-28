@@ -25,6 +25,7 @@ import android.os.RemoteException;
 import android.util.Base64;
 import android.util.Log;
 
+import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.ConnectionConfiguration;
@@ -117,6 +118,73 @@ public class WearableServiceImpl extends IWearableService.Stub {
         Log.d(TAG, "disableConfig: " + name);
         postMain(callbacks, () -> {
             wearable.disableConnection(name);
+            callbacks.onStatus(Status.SUCCESS);
+        });
+    }
+
+    @Override
+    public void updateConnectionStrategy(IWearableCallbacks callbacks, String name, int strategy) throws RemoteException {
+        Log.d(TAG, "updateConnectionStrategy: name=" + name + ", strategy=" + strategy);
+        postMain(callbacks, () -> {
+            ConnectionConfiguration config = wearable.getConfigurationByName(name);
+            if (config == null) {
+                callbacks.onStatus(new Status(CommonStatusCodes.ERROR));
+                return;
+            }
+            wearable.updateConnectionStrategy(config, strategy);
+            callbacks.onStatus(Status.SUCCESS);
+        });
+    }
+
+    @Override
+    public void getRelatedConfigs(IWearableCallbacks callbacks) throws RemoteException {
+        Log.d(TAG, "getRelatedConfigs");
+        postMain(callbacks, () -> {
+            try {
+                List<ConnectionConfiguration> related = new ArrayList<>();
+                ConnectionConfiguration[] configs = wearable.getConfigurations();
+                if (configs != null) {
+                    for (ConnectionConfiguration config : configs) {
+                        if (config.packageName == null || packageName.equals(config.packageName)) {
+                            related.add(config);
+                        }
+                    }
+                }
+                callbacks.onGetConfigsResponse(new GetConfigsResponse(
+                        0,
+                        related.toArray(new ConnectionConfiguration[related.size()])
+                ));
+            } catch (Exception e) {
+                Log.w(TAG, "getRelatedConfigs failed", e);
+                callbacks.onGetConfigsResponse(new GetConfigsResponse(8, new ConnectionConfiguration[0]));
+            }
+        });
+    }
+
+    @Override
+    public void updateConfig(IWearableCallbacks callbacks, ConnectionConfiguration config) throws RemoteException {
+        Log.d(TAG, "updateConfig: " + config);
+        postMain(callbacks, () -> {
+            if (config == null) {
+                callbacks.onStatus(new Status(CommonStatusCodes.ERROR));
+                return;
+            }
+            ConnectionConfiguration existing =
+                    config.address != null
+                            ? wearable.getConfigurationByAddress(config.address)
+                            : wearable.getConfigurationByName(config.name);
+            if (existing == null) {
+                callbacks.onStatus(new Status(CommonStatusCodes.ERROR));
+                return;
+            }
+            config.connected = existing.connected;
+            if (config.peerNodeId == null) config.peerNodeId = existing.peerNodeId;
+            if (config.nodeId == null) config.nodeId = existing.nodeId;
+            if (config.packageName == null) config.packageName = existing.packageName;
+            if (config.connectionRetryStrategy == 0 && existing.connectionRetryStrategy != 0) {
+                config.connectionRetryStrategy = existing.connectionRetryStrategy;
+            }
+            wearable.updateConfiguration(config);
             callbacks.onStatus(Status.SUCCESS);
         });
     }
@@ -265,6 +333,18 @@ public class WearableServiceImpl extends IWearableService.Stub {
             } catch (Exception e) {
                 callbacks.onGetLocalNodeResponse(new GetLocalNodeResponse(8, null));
             }
+        });
+    }
+
+    @Override
+    public void getNodeId(IWearableCallbacks callbacks, String address) throws RemoteException {
+        postNetwork(callbacks, () -> {
+            ConnectionConfiguration config = wearable.getConfigurationByAddress(address);
+            String nodeId = config == null ? null : config.peerNodeId;
+            if (nodeId == null && config != null) nodeId = config.nodeId;
+            callbacks.onGetNodeIdResponse(
+                    new GetNodeIdResponse(nodeId == null ? 13 : 0, nodeId)
+            );
         });
     }
 

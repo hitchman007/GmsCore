@@ -35,17 +35,20 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
     public static final String BY_NAME = "name=?";
 
     public ConfigurationDatabaseHelper(Context context) {
-        super(context, "connectionconfig.db", null, 2);
+        super(context, "connectionconfig.db", null, 3);
     }
 
     @Override
     public void onCreate(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE connectionConfigurations (_id INTEGER PRIMARY KEY AUTOINCREMENT,androidId TEXT,name TEXT NOT NULL,pairedBtAddress TEXT NOT NULL,connectionType INTEGER NOT NULL,role INTEGER NOT NULL,connectionEnabled INTEGER NOT NULL,nodeId TEXT, UNIQUE(name) ON CONFLICT REPLACE);");
+        db.execSQL("CREATE TABLE connectionConfigurations (_id INTEGER PRIMARY KEY AUTOINCREMENT,androidId TEXT,name TEXT NOT NULL,pairedBtAddress TEXT NOT NULL,connectionType INTEGER NOT NULL,role INTEGER NOT NULL,connectionEnabled INTEGER NOT NULL,nodeId TEXT,packageName TEXT,connectionRetryStrategy INTEGER NOT NULL DEFAULT 0, UNIQUE(name) ON CONFLICT REPLACE);");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE connectionConfigurations ADD COLUMN packageName TEXT");
+            db.execSQL("ALTER TABLE connectionConfigurations ADD COLUMN connectionRetryStrategy INTEGER NOT NULL DEFAULT 0");
+        }
     }
 
     private static ConnectionConfiguration configFromCursor(final Cursor cursor) {
@@ -57,7 +60,12 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         String nodeId = cursor.getString(cursor.getColumnIndexOrThrow("nodeId"));
         if (NULL_STRING.equals(name)) name = null;
         if (NULL_STRING.equals(pairedBtAddress)) pairedBtAddress = null;
-        return new ConnectionConfiguration(name, pairedBtAddress, connectionType, role, enabled > 0, nodeId);
+        ConnectionConfiguration config = new ConnectionConfiguration(name, pairedBtAddress, connectionType, role, enabled > 0, nodeId);
+        int packageNameIndex = cursor.getColumnIndex("packageName");
+        if (packageNameIndex >= 0) config.packageName = cursor.getString(packageNameIndex);
+        int strategyIndex = cursor.getColumnIndex("connectionRetryStrategy");
+        if (strategyIndex >= 0) config.connectionRetryStrategy = cursor.getInt(strategyIndex);
+        return config;
     }
 
     public ConnectionConfiguration getConfiguration(String name) {
@@ -66,6 +74,25 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         if (cursor != null) {
             if (cursor.moveToNext())
                 config = configFromCursor(cursor);
+            cursor.close();
+        }
+        return config;
+    }
+
+    public ConnectionConfiguration getConfigurationByAddress(String address) {
+        if (address == null) return null;
+        Cursor cursor = getReadableDatabase().query(
+                TABLE_NAME,
+                null,
+                "pairedBtAddress=?",
+                new String[]{address},
+                null,
+                null,
+                null
+        );
+        ConnectionConfiguration config = null;
+        if (cursor != null) {
+            if (cursor.moveToNext()) config = configFromCursor(cursor);
             cursor.close();
         }
         return config;
@@ -93,6 +120,8 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         contentValues.put("role", config.role);
         contentValues.put("connectionEnabled", config.enabled ? 1 : 0);
         contentValues.put("nodeId", config.nodeId);
+        contentValues.put("packageName", config.packageName);
+        contentValues.put("connectionRetryStrategy", config.connectionRetryStrategy);
         if (oldNodeId == null) {
             getWritableDatabase().insert(TABLE_NAME, null, contentValues);
         } else {

@@ -18,6 +18,12 @@ interface IWearableService {
     void enableConfig(IWearableCallbacks callbacks, String name) = 22;
     void disableConfig(IWearableCallbacks callbacks, String name) = 23;
 
+    // Modern Wear OS connection/configuration surface.
+    void getNodeId(IWearableCallbacks callbacks, String address) = 66;
+    void updateConnectionStrategy(IWearableCallbacks callbacks, String name, int strategy) = 71;
+    void getRelatedConfigs(IWearableCallbacks callbacks) = 72;
+    void updateConfig(IWearableCallbacks callbacks, in ConnectionConfiguration config) = 73;
+
     // DataItems
     void putData(IWearableCallbacks callbacks, in PutDataRequest request) = 5;
     void getDataItem(IWearableCallbacks callbacks, in Uri uri) = 6;

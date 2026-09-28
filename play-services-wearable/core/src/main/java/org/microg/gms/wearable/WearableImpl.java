@@ -217,6 +217,32 @@ public class WearableImpl {
         return configurations;
     }
 
+    public synchronized ConnectionConfiguration getConfigurationByName(String name) {
+        if (name == null) return null;
+        for (ConnectionConfiguration config : getConfigurations()) {
+            if (name.equals(config.name)) return config;
+        }
+        return null;
+    }
+
+    public synchronized ConnectionConfiguration getConfigurationByAddress(String address) {
+        if (address == null) return null;
+        for (ConnectionConfiguration config : getConfigurations()) {
+            if (address.equals(config.address)) return config;
+        }
+        return configDatabase.getConfigurationByAddress(address);
+    }
+
+    public synchronized void updateConfiguration(ConnectionConfiguration config) {
+        configDatabase.putConfiguration(config);
+        configurationsUpdated = true;
+    }
+
+    public synchronized void updateConnectionStrategy(ConnectionConfiguration config, int strategy) {
+        config.connectionRetryStrategy = strategy;
+        updateConfiguration(config);
+    }
+
     private void addConnectedNode(Node node) {
         connectedNodes.add(node);
         onConnectedNodes(getConnectedNodesParcelableList());
