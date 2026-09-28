@@ -19,12 +19,7 @@ The current implementation includes:
   `getRelatedConfigs` (72), and `updateConfig` (73);
 - `onGetNodeIdResponse` callback transaction 38;
 - backward-compatible `ConnectionConfiguration` fields for package name and
-  retry strategy;
-- notification forwarding over the existing Wearable Message API on
-  `/wearable/notification`;
-- media-state forwarding on `/wearable/media` and media commands on
-  `/wearable/media/command`, without introducing a new Bluetooth/RFCOMM
-  transport or radio UUID.
+  retry strategy.
 
 The Binder transaction IDs and parcel fields above are based on the public
 research in microg/GmsCore#3204 rather than guessed radio/protocol values.
@@ -56,15 +51,11 @@ This trace is evidence for transport/configuration behavior only. It is not a
 claim that this branch has completed physical-device setup or final bounty
 acceptance.
 
-The notification/media message contract used by the independently written
-bridge layer is documented publicly in the earlier Apache-2.0 WearOS
-compatibility work at:
-
-https://github.com/microg/GmsCore/pull/3286
-
-The branch uses the documented message paths and payload fields as protocol
-reference only; it does not copy the prior pull request implementation bodies.
-Physical-device behavior still requires independent validation.
+Notification mirroring and media-control behavior are intentionally not
+implemented in this branch yet. Public work in microg/GmsCore#3286 was not
+validated on real hardware at the time of review, so it is not treated here as
+a verified wire-protocol contract. Those features remain gated on real protocol
+evidence and physical-device validation.
 
 ## Submission gate
 
