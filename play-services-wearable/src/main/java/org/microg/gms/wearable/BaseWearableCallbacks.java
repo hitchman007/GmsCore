@@ -39,6 +39,7 @@ import com.google.android.gms.wearable.internal.GetConnectedNodesResponse;
 import com.google.android.gms.wearable.internal.GetDataItemResponse;
 import com.google.android.gms.wearable.internal.GetFdForAssetResponse;
 import com.google.android.gms.wearable.internal.GetLocalNodeResponse;
+import com.google.android.gms.wearable.internal.GetNodeIdResponse;
 import com.google.android.gms.wearable.internal.IWearableCallbacks;
 import com.google.android.gms.wearable.internal.OpenChannelResponse;
 import com.google.android.gms.wearable.internal.PutDataResponse;
@@ -100,6 +101,12 @@ public class BaseWearableCallbacks extends IWearableCallbacks.Stub {
     @Override
     public void onGetConnectedNodesResponse(GetConnectedNodesResponse response) throws RemoteException {
         Log.d(TAG, "unimplemented Method: onGetConnectedNodesResponse");
+
+    }
+
+    @Override
+    public void onGetNodeIdResponse(GetNodeIdResponse response) throws RemoteException {
+        Log.d(TAG, "unimplemented Method: onGetNodeIdResponse");
 
     }
 
