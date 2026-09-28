@@ -371,7 +371,7 @@ public class WearableImpl {
 
     public void onDisconnectReceived(WearableConnection connection, Connect connect) {
         for (ConnectionConfiguration config : getConfigurations()) {
-            if (connect.id.equals(config.peerNodeId)) {
+            if (connect.id.equals(config.peerNodeId) || connect.id.equals(config.nodeId)) {
                 config.connected = false;
             }
         }
