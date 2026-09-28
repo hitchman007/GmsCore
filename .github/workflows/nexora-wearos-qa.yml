@@ -18,4 +18,4 @@ jobs:
           java-version: "17"
           cache: gradle
       - name: Compile WearOS modules
-        run: ./gradlew :play-services-wearable:compileDebugJavaWithJavac :play-services-wearable:core:compileDebugJavaWithJavac --stacktrace --no-daemon
+        run: ./gradlew :play-services-wearable:compileDebugJavaWithJavac :play-services-wearable-core:compileDebugJavaWithJavac --stacktrace --no-daemon
