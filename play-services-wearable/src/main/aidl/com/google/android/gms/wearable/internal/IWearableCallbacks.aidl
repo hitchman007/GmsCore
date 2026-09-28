@@ -46,7 +46,8 @@ interface IWearableCallbacks {
     void onGetFdForAssetResponse(in GetFdForAssetResponse response) = 7;
     void onGetLocalNodeResponse(in GetLocalNodeResponse response) = 8;
     void onGetConnectedNodesResponse(in GetConnectedNodesResponse response) = 9;
-    void onGetNodeIdResponse(in GetNodeIdResponse response) = 38;
+    // AIDL explicit IDs are offsets from FIRST_CALL_TRANSACTION; 37 generates Binder transaction 38.
+    void onGetNodeIdResponse(in GetNodeIdResponse response) = 37;
 
     // Channels
     void onOpenChannelResponse(in OpenChannelResponse response) = 13;
