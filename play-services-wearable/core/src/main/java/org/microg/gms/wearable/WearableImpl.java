@@ -339,11 +339,7 @@ public class WearableImpl {
 
     public void onConnectReceived(WearableConnection connection, String nodeId, Connect connect) {
         for (ConnectionConfiguration config : getConfigurations()) {
-            if (config.nodeId.equals(nodeId)) {
-                if (config.nodeId != nodeId) {
-                    config.nodeId = connect.id;
-                    configDatabase.putConfiguration(config, nodeId);
-                }
+            if (nodeId.equals(config.nodeId)) {
                 config.peerNodeId = connect.id;
                 config.connected = true;
             }
@@ -375,7 +371,7 @@ public class WearableImpl {
 
     public void onDisconnectReceived(WearableConnection connection, Connect connect) {
         for (ConnectionConfiguration config : getConfigurations()) {
-            if (config.nodeId.equals(connect.id)) {
+            if (connect.id.equals(config.peerNodeId)) {
                 config.connected = false;
             }
         }
