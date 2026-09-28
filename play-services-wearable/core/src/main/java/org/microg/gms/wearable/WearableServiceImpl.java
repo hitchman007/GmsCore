@@ -121,48 +121,6 @@ public class WearableServiceImpl extends IWearableService.Stub {
         });
     }
 
-    @Override
-    public void updateConnectionStrategy(IWearableCallbacks callbacks, String name, int strategy) throws RemoteException {
-        Log.d(TAG, "updateConnectionStrategy: name=" + name + ", strategy=" + strategy);
-        postMain(callbacks, () -> {
-            ConnectionConfiguration config = wearable.getConfigurationByName(name);
-            if (config == null) {
-                Log.w(TAG, "updateConnectionStrategy: no config named " + name);
-                callbacks.onStatus(Status.CANCELED);
-                return;
-            }
-            // The legacy ConnectionConfiguration model does not expose a retry-strategy
-            // field. Accept the modern RPC so pairing does not fail at Binder dispatch;
-            // transport-specific retry behavior remains owned by the connection layer.
-            callbacks.onStatus(Status.SUCCESS);
-        });
-    }
-
-    @Override
-    public void getRelatedConfigs(IWearableCallbacks callbacks) throws RemoteException {
-        Log.d(TAG, "getRelatedConfigs");
-        postMain(callbacks, () -> {
-            ConnectionConfiguration[] configurations = wearable.getConfigurations();
-            callbacks.onGetConfigsResponse(new GetConfigsResponse(
-                    0,
-                    configurations == null ? new ConnectionConfiguration[0] : configurations
-            ));
-        });
-    }
-
-    @Override
-    public void updateConfig(IWearableCallbacks callbacks, ConnectionConfiguration config) throws RemoteException {
-        Log.d(TAG, "updateConfig: " + config);
-        postMain(callbacks, () -> {
-            if (config == null) {
-                callbacks.onStatus(Status.CANCELED);
-                return;
-            }
-            wearable.updateConfiguration(config);
-            callbacks.onStatus(Status.SUCCESS);
-        });
-    }
-
     /*
      * DataItems
      */
