@@ -447,10 +447,14 @@ public class WearableImpl {
         invokeListeners(null, listener -> listener.onConnectedNodes(nodes));
     }
 
-    public DataItemRecord putData(PutDataRequest request, String packageName) {
-        DataItemInternal dataItem = new DataItemInternal(fixHost(request.getUri().getHost(), true), request.getUri().getPath());
-        for (Map.Entry<String, Asset> assetEntry : request.getAssets().entrySet()) {
-            Asset asset = prepareAsset(packageName, assetEntry.getValue());
+public DataItemRecord putData(PutDataRequest request, String packageName) {
+	DataItemInternal dataItem = new DataItemInternal(fixHost(request.getUri().getHost(), true), request.getUri().getPath());
+	for (Map.Entry<String, Asset> assetEntry : request.getAssets().entrySet()) {
+		Asset asset = prepareAsset(packageName, assetEntry.getValue());
+		dataItem.putAsset(assetEntry.getKey(), asset);
+	}
+	return dataItem;
+}
             if (asset != null) {
                 nodeDatabase.putAsset(asset, true);
                 dataItem.addAsset(assetEntry.getKey(), asset);
