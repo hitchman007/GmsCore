@@ -530,6 +530,22 @@ public class WearableImpl {
         configurationsUpdated = true;
     }
 
+    public ConnectionConfiguration getConfigurationByName(String name) {
+        if (name == null) return null;
+        return configDatabase.getConfiguration(name);
+    }
+
+    public void updateConfiguration(ConnectionConfiguration config) {
+        if (config == null) return;
+        if (config.nodeId == null && config.name != null) {
+            ConnectionConfiguration existing = configDatabase.getConfiguration(config.name);
+            if (existing != null) config.nodeId = existing.nodeId;
+        }
+        Log.d(TAG, "updateConfig: " + config);
+        configDatabase.putConfiguration(config);
+        configurationsUpdated = true;
+    }
+
     public void createConnection(ConnectionConfiguration config) {
         if (config.nodeId == null) config.nodeId = getLocalNodeId();
         Log.d(TAG, "putConfig[nyp]: " + config);
