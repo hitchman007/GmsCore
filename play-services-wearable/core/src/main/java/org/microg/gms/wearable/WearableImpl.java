@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import com.google.android.gms.common.data.DataHolder;
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.ConnectionConfiguration;
+import com.google.android.gms.wearable.MessageOptions;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.internal.IWearableListener;
 import com.google.android.gms.wearable.internal.MessageEventParcelable;
@@ -779,6 +780,49 @@ public class WearableImpl {
         return -1;
     }
 
+    public int sendMessage(String packageName, String targetNodeId, String path, byte[] data,
+                           MessageOptions options) {
+        return sendMessage(packageName, targetNodeId, path, data);
+    }
+
+    public int sendRequest(String packageName, String targetNodeId, String path, byte[] data,
+                           MessageOptions options, long timeoutMs,
+                           RpcHelper.RpcResponseCallback onResponse,
+                           RpcHelper.RpcTimeoutCallback onTimeout) {
+        WearableConnection connection = activeConnections.get(targetNodeId);
+        if (connection == null) {
+            Log.d(TAG, targetNodeId + " seems not reachable for RPC request");
+            return -1;
+        }
+
+        RpcHelper.RpcConnectionState state =
+                rpcHelper.useConnectionState(packageName, targetNodeId, path);
+        rpcHelper.addResponseListener(
+                targetNodeId, state.generation, state.lastRequestId,
+                timeoutMs, onResponse, onTimeout);
+
+        Request request = new Request.Builder()
+                .targetNodeId(targetNodeId)
+                .path(path)
+                .rawData(data != null ? ByteString.of(data) : ByteString.EMPTY)
+                .packageName(packageName)
+                .signatureDigest(PackageUtils.firstSignatureDigest(context, packageName))
+                .sourceNodeId(getLocalNodeId())
+                .generation(state.generation)
+                .requestId(state.lastRequestId)
+                .requiresResponse(true)
+                .build();
+        try {
+            connection.writeMessage(new RootMessage.Builder().rpcRequest(request).build());
+        } catch (IOException e) {
+            rpcHelper.removeResponseListener(
+                    targetNodeId, state.generation, state.lastRequestId);
+            Log.w(TAG, "Error while writing RPC request, closing link", e);
+            closeConnection(targetNodeId);
+            return -1;
+        }
+        return state.lastRequestId;
+    }
     private static String pendingRpcKey(String peerNodeId, String path) {
         return peerNodeId + ":" + path;
     }

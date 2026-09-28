@@ -44,6 +44,7 @@ import com.google.android.gms.wearable.internal.IWearableCallbacks;
 import com.google.android.gms.wearable.internal.OpenChannelResponse;
 import com.google.android.gms.wearable.internal.PutDataResponse;
 import com.google.android.gms.wearable.internal.RemoveLocalCapabilityResponse;
+import com.google.android.gms.wearable.internal.RpcResponse;
 import com.google.android.gms.wearable.internal.SendMessageResponse;
 import com.google.android.gms.wearable.internal.StorageInfoResponse;
 
@@ -107,6 +108,12 @@ public class BaseWearableCallbacks extends IWearableCallbacks.Stub {
     @Override
     public void onGetNodeIdResponse(GetNodeIdResponse response) throws RemoteException {
         Log.d(TAG, "unimplemented Method: onGetNodeIdResponse");
+
+    }
+
+    @Override
+    public void onRpcResponse(RpcResponse response) throws RemoteException {
+        Log.d(TAG, "unimplemented Method: onRpcResponse");
 
     }
 

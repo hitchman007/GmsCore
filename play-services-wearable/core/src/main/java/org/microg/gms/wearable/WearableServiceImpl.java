@@ -29,6 +29,7 @@ import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.ConnectionConfiguration;
+import com.google.android.gms.wearable.MessageOptions;
 import com.google.android.gms.wearable.internal.*;
 
 import java.io.FileNotFoundException;
@@ -38,6 +39,7 @@ import java.util.Set;
 
 public class WearableServiceImpl extends IWearableService.Stub {
     private static final String TAG = "GmsWearSvcImpl";
+    private static final long SEND_REQUEST_TIMEOUT_MS = 60_000L;
 
     private final Context context;
     private final String packageName;
@@ -253,31 +255,90 @@ public class WearableServiceImpl extends IWearableService.Stub {
     }
 
     @Override
-    public void sendMessage(IWearableCallbacks callbacks, final String targetNodeId, final String path, final byte[] data) throws RemoteException {
-        Log.d(TAG, "sendMessage: " + targetNodeId + " / " + path + ": " + (data == null ? null : Base64.encodeToString(data, Base64.NO_WRAP)));
-        this.wearable.networkHandler.post(new CallbackRunnable(callbacks) {
+    public void sendMessage(IWearableCallbacks callbacks, final String targetNodeId,
+                            final String path, final byte[] data) throws RemoteException {
+        sendMessageWithOptions(callbacks, targetNodeId, path, data, new MessageOptions(0));
+    }
+
+    @Override
+    public void sendMessageWithOptions(IWearableCallbacks callbacks, final String targetNodeId,
+                                       final String path, final byte[] data,
+                                       final MessageOptions options) throws RemoteException {
+        Log.d(TAG, "sendMessage: " + targetNodeId + " / " + path + ": "
+                + (data == null ? null : Base64.encodeToString(data, Base64.NO_WRAP)));
+        wearable.networkHandler.post(new CallbackRunnable(callbacks) {
             @Override
             public void run(IWearableCallbacks callbacks) throws RemoteException {
-                SendMessageResponse sendMessageResponse = new SendMessageResponse();
+                SendMessageResponse response = new SendMessageResponse();
                 try {
-                    sendMessageResponse.requestId = wearable.sendMessage(packageName, targetNodeId, path, data);
-                    if (sendMessageResponse.requestId == -1) {
-                        sendMessageResponse.statusCode = 4000;
-                    }
+                    response.requestId =
+                            wearable.sendMessage(packageName, targetNodeId, path, data, options);
+                    if (response.requestId == -1) response.statusCode = 4000;
                 } catch (Exception e) {
-                    sendMessageResponse.statusCode = 8;
+                    Log.w(TAG, "sendMessage failed", e);
+                    response.statusCode = 8;
                 }
                 mainHandler.post(() -> {
                     try {
-                        callbacks.onSendMessageResponse(sendMessageResponse);
+                        callbacks.onSendMessageResponse(response);
                     } catch (RemoteException e) {
-                        e.printStackTrace();
+                        Log.w(TAG, "Unable to return sendMessage result", e);
                     }
                 });
             }
         });
     }
 
+    @Override
+    public void sendRequest(IWearableCallbacks callbacks, final String targetNodeId,
+                            final String path, final byte[] data) throws RemoteException {
+        sendRequestWithOptions(callbacks, targetNodeId, path, data, new MessageOptions(0));
+    }
+
+    @Override
+    public void sendRequestWithOptions(IWearableCallbacks callbacks, final String targetNodeId,
+                                       final String path, final byte[] data,
+                                       final MessageOptions options) throws RemoteException {
+        Log.d(TAG, "sendRequest: " + targetNodeId + " / " + path + ": "
+                + (data == null ? null : Base64.encodeToString(data, Base64.NO_WRAP)));
+        wearable.networkHandler.post(() -> {
+            int requestId = wearable.sendRequest(
+                    packageName,
+                    targetNodeId,
+                    path,
+                    data,
+                    options,
+                    SEND_REQUEST_TIMEOUT_MS,
+                    (responseRequestId, responseData) -> mainHandler.post(() -> {
+                        try {
+                            callbacks.onRpcResponse(new RpcResponse(
+                                    0,
+                                    responseRequestId,
+                                    responseData != null ? responseData : new byte[0]));
+                        } catch (RemoteException e) {
+                            Log.w(TAG, "Unable to return RPC response", e);
+                        }
+                    }),
+                    timeoutRequestId -> mainHandler.post(() -> {
+                        try {
+                            callbacks.onRpcResponse(
+                                    new RpcResponse(15, timeoutRequestId, new byte[0]));
+                        } catch (RemoteException e) {
+                            Log.w(TAG, "Unable to return RPC timeout", e);
+                        }
+                    }));
+
+            if (requestId == -1) {
+                mainHandler.post(() -> {
+                    try {
+                        callbacks.onRpcResponse(new RpcResponse(4004, -1, new byte[0]));
+                    } catch (RemoteException e) {
+                        Log.w(TAG, "Unable to return no-route RPC result", e);
+                    }
+                });
+            }
+        });
+    }
     @Override
     public void getFdForAsset(IWearableCallbacks callbacks, final Asset asset) throws RemoteException {
         Log.d(TAG, "getFdForAsset " + asset);
@@ -290,7 +351,6 @@ public class WearableServiceImpl extends IWearableService.Stub {
             }
         });
     }
-
     @Override
     public void optInCloudSync(IWearableCallbacks callbacks, boolean enable) throws RemoteException {
         callbacks.onStatus(Status.SUCCESS);

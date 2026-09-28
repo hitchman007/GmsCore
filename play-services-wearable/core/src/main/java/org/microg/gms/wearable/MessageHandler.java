@@ -145,6 +145,17 @@ public class MessageHandler extends ServerMessageListener {
     public void onRpcRequest(Request rpcRequest) {
         Log.d(TAG, "onRpcRequest: " + rpcRequest);
 
+        if (!Boolean.TRUE.equals(rpcRequest.requiresResponse)
+                && rpcRequest.senderRequestId != null
+                && peerNodeId != null) {
+            byte[] responseData = rpcRequest.rawData != null
+                    ? rpcRequest.rawData.toByteArray() : null;
+            if (wearable.getRpcHelper().deliverRpcResponse(
+                    peerNodeId, rpcRequest.generation, rpcRequest.senderRequestId, responseData)) {
+                return;
+            }
+        }
+
         if (Boolean.TRUE.equals(rpcRequest.requiresResponse)
                 && rpcRequest.requestId != null
                 && peerNodeId != null
