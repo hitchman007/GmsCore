@@ -480,13 +480,17 @@ public class WearableServiceImpl extends IWearableService.Stub {
     }
 
     @Override
-    public void getChannelInputStream(IWearableCallbacks callbacks, IChannelStreamCallbacks channelCallbacks, String s) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: getChannelInputStream: " + s);
+    public void getChannelInputStream(IWearableCallbacks callbacks, IChannelStreamCallbacks channelCallbacks, String token) throws RemoteException {
+        Log.d(TAG, "getChannelInputStream: " + token);
+        wearable.networkHandler.post(() ->
+                wearable.getChannelManager().getInputStream(token, callbacks, channelCallbacks));
     }
 
     @Override
-    public void getChannelOutputStream(IWearableCallbacks callbacks, IChannelStreamCallbacks channelCallbacks, String s) throws RemoteException {
-        Log.d(TAG, "unimplemented Method: getChannelOutputStream: " + s);
+    public void getChannelOutputStream(IWearableCallbacks callbacks, IChannelStreamCallbacks channelCallbacks, String token) throws RemoteException {
+        Log.d(TAG, "getChannelOutputStream: " + token);
+        wearable.networkHandler.post(() ->
+                wearable.getChannelManager().getOutputStream(token, callbacks, channelCallbacks));
     }
 
     @Override
