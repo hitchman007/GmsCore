@@ -31,4 +31,42 @@ public class BluetoothConnectionThreadTest {
         assertNotEquals(BluetoothConnectionThread.FLOW_UUID, BluetoothConnectionThread.FLOW15_UUID);
         assertNotEquals(BluetoothConnectionThread.WEARABLE_BT_UUID, BluetoothConnectionThread.FLOW_UUID);
     }
+
+    @Test
+    public void offPolicyDoesNotRetry() {
+        assertEquals(-1L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_OFF, 1));
+        assertEquals(-1L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_OFF, 100));
+    }
+
+    @Test
+    public void defaultPolicyUsesBoundedExponentialBackoff() {
+        assertEquals(1_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_DEFAULT, 1));
+        assertEquals(32_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_DEFAULT, 6));
+        assertEquals(60_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_DEFAULT, 99));
+    }
+
+    @Test
+    public void aggressivePolicyRetriesFasterButStaysBounded() {
+        assertEquals(500L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_AGGRESSIVE, 1));
+        assertEquals(16_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_AGGRESSIVE, 6));
+        assertEquals(30_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_AGGRESSIVE, 99));
+    }
+
+    @Test
+    public void lowPowerPolicyUsesLongerBoundedBackoff() {
+        assertEquals(10_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_LOW_POWER, 1));
+        assertEquals(160_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_LOW_POWER, 5));
+        assertEquals(300_000L, BluetoothConnectionThread.retryDelayMs(
+                BluetoothConnectionThread.RETRY_POLICY_LOW_POWER, 99));
+    }
 }

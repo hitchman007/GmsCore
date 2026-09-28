@@ -616,7 +616,8 @@ public class WearableImpl {
         BluetoothConnectionThread client = BluetoothConnectionThread.clientConnect(
                 device,
                 BluetoothConnectionThread.WEARABLE_BT_UUID,
-                new MessageHandler(context, this, config));
+                new MessageHandler(context, this, config),
+                config.connectionRetryStrategy);
         bluetoothClients.put(config.address, client);
         client.start();
     }
