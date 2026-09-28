@@ -30,7 +30,7 @@ From the GmsCore repository root:
 
 ```bash
 export GRADLE_MICROG_VERSION_WITHOUT_GIT=1
-./gradlew :play-services-wearable:assembleDebug :play-services-wearable:core:assembleDebug
+./gradlew :play-services-wearable:assembleDebug :play-services-wearable-core:assembleDebug
 ./gradlew :play-services-wearable:testDebugUnitTest
 ```
 
