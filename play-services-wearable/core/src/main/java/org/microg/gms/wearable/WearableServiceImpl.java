@@ -430,8 +430,7 @@ public class WearableServiceImpl extends IWearableService.Stub {
     @Override
     @Deprecated
     public void putConnection(IWearableCallbacks callbacks, ConnectionConfiguration config) throws RemoteException {
-        Log.d(TAG, "putConnection: " + config);
-        putConfig(callbacks, config);
+        Log.d(TAG, "unimplemented Method: putConnection");
     }
 
     @Override
