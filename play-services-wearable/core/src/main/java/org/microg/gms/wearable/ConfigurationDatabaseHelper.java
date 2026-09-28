@@ -91,7 +91,7 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         }
         contentValues.put("connectionType", config.type);
         contentValues.put("role", config.role);
-        contentValues.put("connectionEnabled", config.enabled);
+        contentValues.put("connectionEnabled", true);
         contentValues.put("nodeId", config.nodeId);
         if (oldNodeId == null) {
             getWritableDatabase().insert(TABLE_NAME, null, contentValues);
