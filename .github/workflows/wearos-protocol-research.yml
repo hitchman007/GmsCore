@@ -98,6 +98,122 @@ jobs:
           wc -l protocol-summary.txt
           head -c 100000 protocol-summary.txt > protocol-summary-preview.txt
 
+
+      - name: Cross-link notification media and wearable transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re, json, collections
+
+          root = pathlib.Path("decoded/sources")
+          notif_re = re.compile(
+              r"NotificationListenerService|StatusBarNotification|onNotificationPosted|"
+              r"onNotificationRemoved|NotificationManager|WearNotification|notification",
+              re.I,
+          )
+          media_re = re.compile(
+              r"MediaSessionManager|MediaController|PlaybackState|MediaMetadata|"
+              r"TransportControls|AudioManager|MediaSessions|media session|playback",
+              re.I,
+          )
+          wear_re = re.compile(
+              r"Wear_Transport|WearDataBatching|WearableChimeraService|TransportWriter|"
+              r"com\\.google\\.android\\.gms\\.wearable|MessageClient|DataClient|MessageApi|"
+              r"DataApi|PutDataRequest|MessageEvent|DataItem|datatransport|brgc|brqn|brqh",
+              re.I,
+          )
+          path_re = re.compile(r'["\\x27](/[A-Za-z0-9_.:-]+(?:/[A-Za-z0-9_.:-]+)+)["\\x27]')
+          string_re = re.compile(r'["\\x27]([^"\\x27\\r\\n]{3,220})["\\x27]')
+          path_word_re = re.compile(
+              r"notification|notif|media|play|pause|next|previous|volume|companion|"
+              r"sync|phone|wear|clockwork|message|data",
+              re.I,
+          )
+          transport_tokens = [
+              "Wear_Transport", "WearDataBatching", "WearableChimeraService",
+              "TransportWriter", "MessageClient", "DataClient", "MessageApi", "DataApi",
+              "PutDataRequest", "MessageEvent", "DataItem", "brgc", "brqn", "brqh",
+          ]
+
+          records=[]
+          all_paths=[]
+          candidates=[]
+          token_users=collections.defaultdict(list)
+
+          for p in root.rglob("*.java"):
+              try:
+                  text=p.read_text(errors="ignore")
+              except Exception:
+                  continue
+              rel=str(p.relative_to(root))
+              has_notif=bool(notif_re.search(text))
+              has_media=bool(media_re.search(text))
+              has_wear=bool(wear_re.search(text))
+              paths=sorted(set(path_re.findall(text)))
+              strings=sorted(set(s for s in string_re.findall(text) if path_word_re.search(s)))[:200]
+              for path in paths:
+                  all_paths.append({"file":rel,"path":path})
+                  if path_word_re.search(path):
+                      candidates.append({"file":rel,"path":path})
+              for tok in transport_tokens:
+                  if tok in text:
+                      token_users[tok].append(rel)
+              if not (has_notif or has_media):
+                  continue
+              lines=text.splitlines()
+              hit_lines=[]
+              for idx,line in enumerate(lines):
+                  if notif_re.search(line) or media_re.search(line) or wear_re.search(line) or path_re.search(line):
+                      lo=max(0,idx-3); hi=min(len(lines),idx+4)
+                      ctx="\\n".join(lines[lo:hi])
+                      if notif_re.search(ctx) or media_re.search(ctx):
+                          hit_lines.append({
+                              "line":idx+1,
+                              "paths":sorted(set(path_re.findall(ctx))),
+                              "context":ctx[:5000],
+                          })
+              records.append({
+                  "file":rel,
+                  "notification":has_notif,
+                  "media":has_media,
+                  "wear_transport":has_wear,
+                  "paths":paths,
+                  "candidate_strings":strings,
+                  "hits":hit_lines[:80],
+              })
+
+          pathlib.Path("protocol-linkage.json").write_text(
+              json.dumps(records,indent=2,ensure_ascii=False)
+          )
+          pathlib.Path("all-paths.json").write_text(
+              json.dumps(all_paths,indent=2,ensure_ascii=False)
+          )
+          pathlib.Path("candidate-paths.json").write_text(
+              json.dumps(candidates,indent=2,ensure_ascii=False)
+          )
+          pathlib.Path("transport-token-users.json").write_text(
+              json.dumps({k:sorted(set(v)) for k,v in token_users.items()},indent=2)
+          )
+
+          with open("protocol-linkage-summary.txt","w",encoding="utf-8") as out:
+              out.write("DIRECT NOTIFICATION/MEDIA <-> WEAR TRANSPORT LINKS\\n")
+              for rec in records:
+                  if rec["wear_transport"]:
+                      out.write(f'FILE {rec["file"]} notif={rec["notification"]} media={rec["media"]}\\n')
+                      if rec["paths"]:
+                          out.write("PATHS " + ", ".join(rec["paths"]) + "\\n")
+                      for s in rec["candidate_strings"][:40]:
+                          out.write("STRING " + s + "\\n")
+                      for hit in rec["hits"][:20]:
+                          out.write(f'LINE {hit["line"]} paths={hit["paths"]}\\n{hit["context"]}\\n---\\n')
+              out.write("\\nCANDIDATE PATHS ACROSS ALL DECOMPILED SOURCES\\n")
+              for item in candidates:
+                  out.write(f'{item["file"]}: {item["path"]}\\n')
+          PY
+          wc -l protocol-linkage-summary.txt
+          head -c 200000 protocol-linkage-summary.txt > protocol-linkage-preview.txt
+
       - name: Upload protocol evidence
         uses: actions/upload-artifact@v4
         with:
@@ -107,5 +223,11 @@ jobs:
             protocol-evidence.json
             protocol-summary.txt
             protocol-summary-preview.txt
+            protocol-linkage.json
+            all-paths.json
+            candidate-paths.json
+            transport-token-users.json
+            protocol-linkage-summary.txt
+            protocol-linkage-preview.txt
           if-no-files-found: error
           retention-days: 3
