@@ -16,9 +16,6 @@
 
 package org.microg.gms.wearable;
 
-import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -72,7 +69,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 import okio.ByteString;
@@ -82,9 +78,6 @@ public class WearableImpl {
     private static final String TAG = "GmsWear";
 
     private static final int WEAR_TCP_PORT = 5601;
-    // WearableBt is documented by teccheck/wearos-research; the watch is RFCOMM server.
-    private static final UUID WEARABLE_BT_UUID =
-            UUID.fromString("5e8945b0-9525-11e3-a5e2-0800200c9a66");
 
     private final Context context;
     private final NodeDatabaseHelper nodeDatabase;
@@ -94,7 +87,6 @@ public class WearableImpl {
     private final Map<String, WearableConnection> activeConnections = new HashMap<String, WearableConnection>();
     private RpcHelper rpcHelper;
     private SocketConnectionThread sct;
-    private final Map<String, BluetoothConnectionThread> bluetoothConnections = new HashMap<>();
     private ConnectionConfiguration[] configurations;
     private boolean configurationsUpdated = false;
     private ClockworkNodePreferences clockworkNodePreferences;
@@ -513,61 +505,23 @@ public class WearableImpl {
         }
     }
 
-    @SuppressLint("MissingPermission")
     public void enableConnection(String name) {
         configDatabase.setEnabledState(name, true);
         configurationsUpdated = true;
-        ConnectionConfiguration config = configDatabase.getConfiguration(name);
-        if ("server".equals(name) && sct == null) {
+        if (name.equals("server") && sct == null) {
             Log.d(TAG, "Starting server on :" + WEAR_TCP_PORT);
-            (sct = SocketConnectionThread.serverListen(
-                    WEAR_TCP_PORT,
-                    new MessageHandler(context, this, config)
-            )).start();
-            return;
-        }
-        if (config == null || TextUtils.isEmpty(config.address)) return;
-
-        BluetoothConnectionThread existing = bluetoothConnections.get(name);
-        if (existing != null && existing.isAlive()) return;
-        if (existing != null) bluetoothConnections.remove(name);
-
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        if (adapter == null) {
-            Log.w(TAG, "Bluetooth unavailable for Wear OS connection " + name);
-            return;
-        }
-        try {
-            BluetoothDevice device = adapter.getRemoteDevice(config.address);
-            BluetoothConnectionThread thread = new BluetoothConnectionThread(
-                    device,
-                    WEARABLE_BT_UUID,
-                    new MessageHandler(context, this, config)
-            );
-            bluetoothConnections.put(name, thread);
-            Log.d(TAG, "Starting WearableBt connection for " + name + " at " + config.address);
-            thread.start();
-        } catch (IllegalArgumentException | SecurityException e) {
-            Log.w(TAG, "Invalid/unavailable Bluetooth configuration " + name, e);
+            (sct = SocketConnectionThread.serverListen(WEAR_TCP_PORT, new MessageHandler(context, this, configDatabase.getConfiguration(name)))).start();
         }
     }
 
     public void disableConnection(String name) {
         configDatabase.setEnabledState(name, false);
         configurationsUpdated = true;
-        if ("server".equals(name) && sct != null) {
+        if (name.equals("server") && sct != null) {
             activeConnections.remove(sct.getWearableConnection());
             sct.close();
             sct.interrupt();
             sct = null;
-        }
-        BluetoothConnectionThread bluetooth = bluetoothConnections.remove(name);
-        if (bluetooth != null) {
-            WearableConnection connection = bluetooth.getWearableConnection();
-            if (connection != null) {
-                activeConnections.values().removeAll(Collections.singleton(connection));
-            }
-            bluetooth.closeConnection();
         }
     }
 
@@ -622,26 +576,14 @@ public class WearableImpl {
 
     private void closeConnection(String nodeId) {
         WearableConnection connection = activeConnections.get(nodeId);
-        if (connection == null) return;
         try {
             connection.close();
         } catch (IOException e1) {
             Log.w(TAG, e1);
         }
-        if (sct != null && connection == sct.getWearableConnection()) {
+        if (connection == sct.getWearableConnection()) {
             sct.close();
             sct = null;
-        }
-        String bluetoothName = null;
-        for (Map.Entry<String, BluetoothConnectionThread> entry : bluetoothConnections.entrySet()) {
-            if (connection == entry.getValue().getWearableConnection()) {
-                bluetoothName = entry.getKey();
-                break;
-            }
-        }
-        if (bluetoothName != null) {
-            BluetoothConnectionThread bluetooth = bluetoothConnections.remove(bluetoothName);
-            if (bluetooth != null) bluetooth.closeConnection();
         }
         activeConnections.remove(nodeId);
         for (ConnectionConfiguration config : getConfigurations()) {
@@ -680,21 +622,11 @@ public class WearableImpl {
     }
 
     public void stop() {
-        if (sct != null) {
-            sct.close();
-            sct.interrupt();
-            sct = null;
-        }
-        for (BluetoothConnectionThread thread : new ArrayList<>(bluetoothConnections.values())) {
-            thread.closeConnection();
-        }
-        bluetoothConnections.clear();
         try {
             this.networkHandlerLock.await();
             this.networkHandler.getLooper().quit();
         } catch (InterruptedException e) {
             Log.w(TAG, e);
-            Thread.currentThread().interrupt();
         }
     }
 
