@@ -1,0 +1,111 @@
+name: WearOS protocol research
+
+on:
+  push:
+    branches:
+      - nexora/protocol-research
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-gms-wearable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download Android 15 WearOS GMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            "https://raw.githubusercontent.com/leddaz-dump-stash/google_aurora_dump/b441e0de94920ad509e4258bf98383d687bc38b2/product/priv-app/PrebuiltGmsCoreForClockworkWearable/PrebuiltGmsCoreForClockworkWearable.apk" \
+            -o gms-wearable.apk
+          test "$(stat -c%s gms-wearable.apk)" -gt 80000000
+          sha256sum gms-wearable.apk | tee apk-sha256.txt
+
+      - name: Install JADX
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            "https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip" \
+            -o jadx.zip
+          unzip -q jadx.zip -d jadx
+          ./jadx/bin/jadx --version
+
+      - name: Decompile code only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p decoded
+          timeout 20m ./jadx/bin/jadx \
+            --no-res \
+            --threads-count 4 \
+            -d decoded \
+            gms-wearable.apk || true
+          test -d decoded/sources
+
+      - name: Extract protocol evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re, json
+          root = pathlib.Path("decoded/sources")
+          keyword = re.compile(
+              r"WearNotification|MediaSessions|MediaSession|Wear_Transport|"
+              r"WearDataBatching|datatransport|wearable.*notification|"
+              r"notification.*wearable|wearable.*media|media.*wearable",
+              re.I,
+          )
+          path_re = re.compile(r'["\x27](/[A-Za-z0-9_.:-]+(?:/[A-Za-z0-9_.:-]+)+)["\x27]')
+          uuid_re = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b', re.I)
+          rows = []
+          for p in root.rglob("*.java"):
+              try:
+                  text = p.read_text(errors="ignore")
+              except Exception:
+                  continue
+              if not keyword.search(text):
+                  continue
+              lines = text.splitlines()
+              for idx, line in enumerate(lines):
+                  if not keyword.search(line) and not path_re.search(line):
+                      continue
+                  lo=max(0,idx-4); hi=min(len(lines),idx+5)
+                  ctx="\n".join(lines[lo:hi])
+                  paths=sorted(set(path_re.findall(ctx)))
+                  uuids=sorted(set(m.group(0).lower() for m in uuid_re.finditer(ctx)))
+                  if keyword.search(ctx):
+                      rows.append({
+                          "file": str(p.relative_to(root)),
+                          "line": idx+1,
+                          "paths": paths,
+                          "uuids": uuids,
+                          "context": ctx[:6000],
+                      })
+          pathlib.Path("protocol-evidence.json").write_text(
+              json.dumps(rows, indent=2, ensure_ascii=False)
+          )
+          with open("protocol-summary.txt","w",encoding="utf-8") as out:
+              for row in rows:
+                  if row["paths"] or row["uuids"] or re.search(r"WearNotification|MediaSessions|Wear_Transport|WearDataBatching", row["context"], re.I):
+                      out.write(f'FILE {row["file"]}:{row["line"]}\n')
+                      if row["paths"]: out.write("PATHS " + ", ".join(row["paths"]) + "\n")
+                      if row["uuids"]: out.write("UUIDS " + ", ".join(row["uuids"]) + "\n")
+                      out.write(row["context"] + "\n---\n")
+          PY
+          wc -l protocol-summary.txt
+          head -c 100000 protocol-summary.txt > protocol-summary-preview.txt
+
+      - name: Upload protocol evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: wearos-protocol-evidence
+          path: |
+            apk-sha256.txt
+            protocol-evidence.json
+            protocol-summary.txt
+            protocol-summary-preview.txt
+          if-no-files-found: error
+          retention-days: 3
