@@ -87,7 +87,6 @@ public class WearableImpl {
     private final Map<String, WearableConnection> activeConnections = new HashMap<String, WearableConnection>();
     private RpcHelper rpcHelper;
     private SocketConnectionThread sct;
-    private final Map<String, BluetoothConnectionThread> bluetoothConnections = new HashMap<String, BluetoothConnectionThread>();
     private ConnectionConfiguration[] configurations;
     private boolean configurationsUpdated = false;
     private ClockworkNodePreferences clockworkNodePreferences;
@@ -382,7 +381,6 @@ public class WearableImpl {
         }
         Log.d(TAG, "Removing connection from list of open connections: " + connection);
         activeConnections.remove(connect.id);
-        forgetBluetoothConnection(connection);
         onPeerDisconnected(new NodeParcelable(connect.id, connect.name));
     }
 
@@ -510,62 +508,24 @@ public class WearableImpl {
     public void enableConnection(String name) {
         configDatabase.setEnabledState(name, true);
         configurationsUpdated = true;
-        ConnectionConfiguration config = configDatabase.getConfiguration(name);
-        if ("server".equals(name) && sct == null && config != null) {
+        if (name.equals("server") && sct == null) {
             Log.d(TAG, "Starting server on :" + WEAR_TCP_PORT);
-            (sct = SocketConnectionThread.serverListen(
-                    WEAR_TCP_PORT,
-                    new MessageHandler(context, this, config)
-            )).start();
-            return;
+            (sct = SocketConnectionThread.serverListen(WEAR_TCP_PORT, new MessageHandler(context, this, configDatabase.getConfiguration(name)))).start();
         }
-        if (config != null && config.role != 2 && !TextUtils.isEmpty(config.address)
-                && !bluetoothConnections.containsKey(name)) {
-            Log.d(TAG, "Starting WearableBt client for " + name + " at " + config.address);
-            BluetoothConnectionThread thread = new BluetoothConnectionThread(
-                    config.address,
-                    new MessageHandler(context, this, config)
-            );
-            bluetoothConnections.put(name, thread);
-            thread.start();
-        }
-    }
-
-    private void removeActiveConnection(WearableConnection connection) {
-        if (connection == null) return;
-        activeConnections.entrySet().removeIf(entry -> entry.getValue() == connection);
-    }
-
-    private void forgetBluetoothConnection(WearableConnection connection) {
-        if (connection == null) return;
-        String matchedName = null;
-        for (Map.Entry<String, BluetoothConnectionThread> entry : bluetoothConnections.entrySet()) {
-            if (entry.getValue().getWearableConnection() == connection) {
-                matchedName = entry.getKey();
-                break;
-            }
-        }
-        if (matchedName != null) bluetoothConnections.remove(matchedName);
     }
 
     public void disableConnection(String name) {
         configDatabase.setEnabledState(name, false);
         configurationsUpdated = true;
-        if ("server".equals(name) && sct != null) {
-            removeActiveConnection(sct.getWearableConnection());
+        if (name.equals("server") && sct != null) {
+            activeConnections.remove(sct.getWearableConnection());
             sct.close();
             sct.interrupt();
             sct = null;
         }
-        BluetoothConnectionThread bluetooth = bluetoothConnections.remove(name);
-        if (bluetooth != null) {
-            removeActiveConnection(bluetooth.getWearableConnection());
-            bluetooth.close();
-        }
     }
 
     public void deleteConnection(String name) {
-        disableConnection(name);
         configDatabase.deleteConfiguration(name);
         configurationsUpdated = true;
     }
@@ -616,25 +576,15 @@ public class WearableImpl {
 
     private void closeConnection(String nodeId) {
         WearableConnection connection = activeConnections.get(nodeId);
-        if (connection == null) return;
         try {
             connection.close();
         } catch (IOException e1) {
             Log.w(TAG, e1);
         }
-        if (sct != null && connection == sct.getWearableConnection()) {
+        if (connection == sct.getWearableConnection()) {
             sct.close();
             sct = null;
         }
-        String bluetoothName = null;
-        for (Map.Entry<String, BluetoothConnectionThread> entry : bluetoothConnections.entrySet()) {
-            if (entry.getValue().getWearableConnection() == connection) {
-                bluetoothName = entry.getKey();
-                entry.getValue().close();
-                break;
-            }
-        }
-        if (bluetoothName != null) bluetoothConnections.remove(bluetoothName);
         activeConnections.remove(nodeId);
         for (ConnectionConfiguration config : getConfigurations()) {
             if (nodeId.equals(config.nodeId) || nodeId.equals(config.peerNodeId)) {
@@ -672,22 +622,11 @@ public class WearableImpl {
     }
 
     public void stop() {
-        if (sct != null) {
-            sct.close();
-            sct.interrupt();
-            sct = null;
-        }
-        for (BluetoothConnectionThread thread : new ArrayList<BluetoothConnectionThread>(bluetoothConnections.values())) {
-            thread.close();
-        }
-        bluetoothConnections.clear();
-        activeConnections.clear();
         try {
             this.networkHandlerLock.await();
             this.networkHandler.getLooper().quit();
         } catch (InterruptedException e) {
             Log.w(TAG, e);
-            Thread.currentThread().interrupt();
         }
     }
 
