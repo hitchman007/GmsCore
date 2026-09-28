@@ -46,7 +46,7 @@ interface IWearableCallbacks {
     void onGetFdForAssetResponse(in GetFdForAssetResponse response) = 7;
     void onGetLocalNodeResponse(in GetLocalNodeResponse response) = 8;
     void onGetConnectedNodesResponse(in GetConnectedNodesResponse response) = 9;
-    void onGetNodeIdResponse(in GetNodeIdResponse response) = 37;
+    void onGetNodeIdResponse(in GetNodeIdResponse response) = 38;
 
     // Channels
     void onOpenChannelResponse(in OpenChannelResponse response) = 13;
