@@ -569,12 +569,6 @@ public class WearableImpl {
 
     public void sendMessageReceived(String packageName, MessageEventParcelable messageEvent) {
         Log.d(TAG, "onMessageReceived: " + messageEvent);
-        if (MediaBridge.MEDIA_COMMAND_PATH.equals(messageEvent.getPath())) {
-            if (!MediaBridge.handleCommand(context, messageEvent.data)) {
-                Log.d(TAG, "Unhandled media command payload");
-            }
-            return;
-        }
         Intent intent = new Intent("com.google.android.gms.wearable.MESSAGE_RECEIVED");
         intent.setPackage(packageName);
         intent.setData(Uri.parse("wear://" + getLocalNodeId() + "/" + messageEvent.getPath()));
@@ -621,10 +615,6 @@ public class WearableImpl {
         }
         onPeerDisconnected(new NodeParcelable(nodeId, "Wear device"));
         Log.d(TAG, "Closed connection to " + nodeId + " on error");
-    }
-
-    public synchronized List<String> getConnectedNodeIds() {
-        return new ArrayList<String>(activeConnections.keySet());
     }
 
     public int sendMessage(String packageName, String targetNodeId, String path, byte[] data) {
