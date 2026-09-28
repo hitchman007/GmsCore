@@ -85,7 +85,6 @@ public class WearableImpl {
     private final Map<String, List<ListenerInfo>> listeners = new HashMap<String, List<ListenerInfo>>();
     private final Set<Node> connectedNodes = new HashSet<Node>();
     private final Map<String, WearableConnection> activeConnections = new HashMap<String, WearableConnection>();
-    private final Map<String, BluetoothConnectionThread> bluetoothConnectionThreads = new HashMap<String, BluetoothConnectionThread>();
     private RpcHelper rpcHelper;
     private SocketConnectionThread sct;
     private ConnectionConfiguration[] configurations;
@@ -372,7 +371,7 @@ public class WearableImpl {
 
     public void onDisconnectReceived(WearableConnection connection, Connect connect) {
         for (ConnectionConfiguration config : getConfigurations()) {
-            if (connect.id.equals(config.peerNodeId) || connect.id.equals(config.nodeId)) {
+            if (connect.id.equals(config.peerNodeId)) {
                 config.connected = false;
             }
         }
@@ -502,51 +501,18 @@ public class WearableImpl {
         }
     }
 
-    public synchronized void enableConnection(String name) {
+    public void enableConnection(String name) {
         configDatabase.setEnabledState(name, true);
         configurationsUpdated = true;
-
-        ConnectionConfiguration config = configDatabase.getConfiguration(name);
-        if (config == null) {
-            Log.w(TAG, "Cannot enable unknown wearable connection: " + name);
-            return;
-        }
-
-        // Type 1 is the Bluetooth Classic WearableBt transport observed on
-        // current Wear OS configurations. The watch is the RFCOMM server and
-        // the phone connects to the configured peer address.
-        if (config.type == 1 && !TextUtils.isEmpty(config.address)) {
-            if (!bluetoothConnectionThreads.containsKey(name)) {
-                Log.d(TAG, "Starting WearableBt connection to " + config.address);
-                BluetoothConnectionThread thread = new BluetoothConnectionThread(
-                        config,
-                        new MessageHandler(context, this, config)
-                );
-                bluetoothConnectionThreads.put(name, thread);
-                thread.start();
-            }
-            return;
-        }
-
-        // Preserve the existing TCP development/legacy transport.
         if (name.equals("server") && sct == null) {
             Log.d(TAG, "Starting server on :" + WEAR_TCP_PORT);
-            (sct = SocketConnectionThread.serverListen(
-                    WEAR_TCP_PORT,
-                    new MessageHandler(context, this, config)
-            )).start();
+            (sct = SocketConnectionThread.serverListen(WEAR_TCP_PORT, new MessageHandler(context, this, configDatabase.getConfiguration(name)))).start();
         }
     }
 
-    public synchronized void disableConnection(String name) {
+    public void disableConnection(String name) {
         configDatabase.setEnabledState(name, false);
         configurationsUpdated = true;
-
-        BluetoothConnectionThread bluetoothThread = bluetoothConnectionThreads.remove(name);
-        if (bluetoothThread != null) {
-            bluetoothThread.close();
-        }
-
         if (name.equals("server") && sct != null) {
             activeConnections.remove(sct.getWearableConnection());
             sct.close();
@@ -611,7 +577,7 @@ public class WearableImpl {
         } catch (IOException e1) {
             Log.w(TAG, e1);
         }
-        if (sct != null && connection == sct.getWearableConnection()) {
+        if (connection == sct.getWearableConnection()) {
             sct.close();
             sct = null;
         }
@@ -651,23 +617,11 @@ public class WearableImpl {
         return -1;
     }
 
-    public synchronized void stop() {
-        for (BluetoothConnectionThread thread : new ArrayList<BluetoothConnectionThread>(bluetoothConnectionThreads.values())) {
-            thread.close();
-        }
-        bluetoothConnectionThreads.clear();
-
-        if (sct != null) {
-            sct.close();
-            sct.interrupt();
-            sct = null;
-        }
-
+    public void stop() {
         try {
             this.networkHandlerLock.await();
             this.networkHandler.getLooper().quit();
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             Log.w(TAG, e);
         }
     }
