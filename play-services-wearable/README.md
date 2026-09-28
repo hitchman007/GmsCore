@@ -30,8 +30,10 @@ From the GmsCore repository root:
 
 ```bash
 export GRADLE_MICROG_VERSION_WITHOUT_GIT=1
-./gradlew :play-services-wearable:assembleDebug :play-services-wearable:core:assembleDebug
-./gradlew :play-services-wearable:testDebugUnitTest
+./gradlew :play-services-wearable:assembleDebug :play-services-wearable-core:assembleDebug
+./gradlew :play-services-wearable:assembleRelease :play-services-wearable-core:assembleRelease
+./gradlew :play-services-wearable:lintDebug :play-services-wearable-core:lintDebug
+./gradlew :play-services-wearable:testDebugUnitTest :play-services-wearable-core:testDebugUnitTest
 ```
 
 The owner-fork QA flow records the exact build result in the draft pull
