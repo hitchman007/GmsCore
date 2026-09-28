@@ -181,9 +181,6 @@ public class WearableServiceImpl extends IWearableService.Stub {
             if (config.peerNodeId == null) config.peerNodeId = existing.peerNodeId;
             if (config.nodeId == null) config.nodeId = existing.nodeId;
             if (config.packageName == null) config.packageName = existing.packageName;
-            if (config.connectionRetryStrategy == 0 && existing.connectionRetryStrategy != 0) {
-                config.connectionRetryStrategy = existing.connectionRetryStrategy;
-            }
             wearable.updateConfiguration(config);
             callbacks.onStatus(Status.SUCCESS);
         });
@@ -341,7 +338,6 @@ public class WearableServiceImpl extends IWearableService.Stub {
         postNetwork(callbacks, () -> {
             ConnectionConfiguration config = wearable.getConfigurationByAddress(address);
             String nodeId = config == null ? null : config.peerNodeId;
-            if (nodeId == null && config != null) nodeId = config.nodeId;
             callbacks.onGetNodeIdResponse(
                     new GetNodeIdResponse(nodeId == null ? 13 : 0, nodeId)
             );
